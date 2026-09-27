@@ -877,7 +877,7 @@ bool mgrTryRawBorderFile(std::string border) {
         stbi_image_free(image);
 
         gfxLoadBorder(imgData, imgWidth, imgHeight);
-        delete imgData;
+        delete[] imgData;
 
         return true;
     }

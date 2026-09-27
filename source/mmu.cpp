@@ -86,11 +86,11 @@ MMU::MMU(Gameboy* gameboy) {
 
 void MMU::reset() {
     memset(this->banks, 0, sizeof(this->banks));
-    memset(this->bankReadFuncs, 0, sizeof(this->bankReadFuncs));
-    memset(this->bankWriteFuncs, 0, sizeof(this->bankWriteFuncs));
+	for(auto& func : this->bankReadFuncs)  func = nullptr;
+	for(auto& func : this->bankWriteFuncs) func = nullptr;
 
-    memset(this->ioReadFuncs, 0, sizeof(this->ioReadFuncs));
-    memset(this->ioWriteFuncs, 0, sizeof(this->ioWriteFuncs));
+	for(auto& func : this->ioReadFuncs)    func = nullptr;
+	for(auto& func : this->ioWriteFuncs)   func = nullptr;
 
     for(int i = 0; i < 8; i++) {
         memset(this->wram[i], 0, sizeof(this->wram[i]));
@@ -116,6 +116,7 @@ void MMU::reset() {
         if(this->biosMapped) {
             this->biosMapped = false;
             this->mapBanks();
+            this->gameboy->cpu->setA(this->gameboy->gbMode == MODE_CGB ? 0x11 : 0x01);
         }
     });
 

@@ -47,6 +47,7 @@ enum {
 class CPU {
 public:
     CPU(Gameboy* gameboy);
+    inline void setA(u8 val) { this->registers.r8[R8_A] = val; }
 
     void reset();
 

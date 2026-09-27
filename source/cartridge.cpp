@@ -50,7 +50,7 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
                 memcpy(this->rom, &copy[roundedSize - 0x8000], 0x8000);
                 memcpy(&this->rom[0x8000], copy, roundedSize - 0x8000);
 
-                delete copy;
+                delete[] copy;
             }
         }
     }

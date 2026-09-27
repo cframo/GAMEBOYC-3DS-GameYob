@@ -90,13 +90,8 @@ void PPU::reset() {
     memset(this->rawBgPalette, 0, sizeof(this->rawBgPalette));
     memset(this->rawSprPalette, 0, sizeof(this->rawSprPalette));
 
-    if(this->gameboy->gbMode == MODE_CGB) {
-        memset(this->bgPalette, 0xFF, sizeof(this->bgPalette));
-        memset(this->sprPalette, 0x00, sizeof(this->sprPalette));
-    } else {
-        memcpy(this->bgPalette, grayScalePalette, sizeof(this->bgPalette));
-        memcpy(this->sprPalette, grayScalePalette, sizeof(this->sprPalette));
-    }
+    memcpy(this->bgPalette, grayScalePalette, sizeof(this->bgPalette));
+    memcpy(this->sprPalette, grayScalePalette, sizeof(this->sprPalette));
 
     if(this->gameboy->gbMode == MODE_CGB) {
         for(u8 i = 0; i < sizeof(this->expandedBgp); i++) {

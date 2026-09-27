@@ -106,6 +106,10 @@ bool gfxInit() {
         return false;
     }
 
+    C3D_TexEnvInit(env);
+    C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
+
     C3D_DepthTest(true, GPU_GEQUAL, GPU_WRITE_ALL);
 
     Mtx_OrthoTilt(&projectionTop, 0.0, 400.0, 240.0, 0.0, 0.0, 1.0, true);
