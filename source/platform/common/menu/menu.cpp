@@ -295,7 +295,26 @@ void versionInfoFunc(int value) {
     displaySubMenu(subMenuGenericUpdateFunc);
 
     uiClear();
-    uiPrint("Version: %d.%d.%d\n", VERSION_MAJOR, VERSION_MINOR, VERSION_MICRO);
+
+    uiSetTextColor(TEXT_COLOR_YELLOW);
+    uiPrint("       GameYob 3DS (cframo)\n\n");
+    uiSetTextColor(TEXT_COLOR_NONE);
+
+    uiPrint(" Version:   v%d.%d.%d-custom\n", VERSION_MAJOR, VERSION_MINOR, VERSION_MICRO);
+#ifdef GIT_HASH
+    uiPrint(" Commit:    %s\n", GIT_HASH);
+#endif
+    uiPrint(" Target:    Nintendo 3DS (CTR)\n");
+    uiPrint(" Fork:      cframo/GAMEBOYC-3DS-GameYob\n\n");
+
+    uiSetTextColor(TEXT_COLOR_GRAY);
+    uiPrint(" Upstream Authors:\n");
+    uiPrint("   Drenn, Steveice10\n\n");
+
+    uiSetTextColor(TEXT_COLOR_GREEN);
+    uiPrint(" Press A or B to return\n");
+    uiSetTextColor(TEXT_COLOR_NONE);
+
     uiFlush();
 }
 
@@ -340,12 +359,13 @@ SubMenu menuList[] = {
         },
         {
                 "GameYob",
-                4,
+                5,
                 {
                         {"Button Mapping", keyConfigFunc, 0, {}, 0},
                         {"Console Output", consoleOutputFunc, 5, {"Off", "FPS", "Time", "FPS+Time", "Debug"}, 0},
                         {"Pause on Menu", setPauseOnMenuFunc, 2, {"Off", "On"}, 0},
-                        {"Save Settings", saveSettingsFunc, 0, {}, 0}
+                        {"Save Settings", saveSettingsFunc, 0, {}, 0},
+                        {"Version Info", versionInfoFunc, 0, {}, 0}
                 }
         },
         {
@@ -572,22 +592,44 @@ void redrawMenu() {
         uiSetTextColor(TEXT_COLOR_NONE);
     }
 
-    // Message at the bottom
-    if(printMessage[0] != '\0') {
-        int rows = menuGetNumRows();
-        int newlines = height - 1 - (rows * 2 + 2) - 1;
+    // Message or custom version footer at the bottom
+    int rows = menuGetNumRows();
+    int newlines = height - 1 - (rows * 2 + 2) - 1;
+    if(newlines >= 0) {
         for(int i = 0; i < newlines; i++) {
             uiPrint("\n");
         }
 
-        int spaces = width - 1 - strlen(printMessage);
-        for(int i = 0; i < spaces; i++) {
-            uiPrint(" ");
+        if(printMessage[0] != '\0') {
+            int spaces = width - 1 - (int) strlen(printMessage);
+            if(spaces < 0) {
+                spaces = 0;
+            }
+            for(int i = 0; i < spaces; i++) {
+                uiPrint(" ");
+            }
+
+            uiPrint("%s", printMessage);
+            printMessage[0] = '\0';
+        } else {
+            char footer[40];
+#ifdef GIT_HASH
+            snprintf(footer, sizeof(footer), "GameYob 3DS (cframo) v%d.%d.%d-%s", VERSION_MAJOR, VERSION_MINOR, VERSION_MICRO, GIT_HASH);
+#else
+            snprintf(footer, sizeof(footer), "GameYob 3DS (cframo) v%d.%d.%d", VERSION_MAJOR, VERSION_MINOR, VERSION_MICRO);
+#endif
+            int footerLen = (int) strlen(footer);
+            int spaces = (width - 1 - footerLen) / 2;
+            if(spaces < 0) {
+                spaces = 0;
+            }
+            for(int i = 0; i < spaces; i++) {
+                uiPrint(" ");
+            }
+            uiSetTextColor(TEXT_COLOR_GRAY);
+            uiPrint("%s", footer);
+            uiSetTextColor(TEXT_COLOR_NONE);
         }
-
-        uiPrint("%s\n", printMessage);
-
-        printMessage[0] = '\0';
     }
 
     uiFlush();
@@ -688,22 +730,19 @@ void printMenuMessage(const char* s) {
     int height = 0;
     uiGetSize(&width, &height);
 
-    int rows = menuGetNumRows();
-
-    bool hadPreviousMessage = printMessage[0] != '\0';
     strncpy(printMessage, s, sizeof(printMessage) - 1);
     printMessage[sizeof(printMessage) - 1] = '\0';
 
-    if(hadPreviousMessage) {
-        uiPrint("\r");
-    } else {
-        int newlines = height - 1 - (rows * 2 + 2) - 1;
-        for(int i = 0; i < newlines; i++) {
-            uiPrint("\n");
-        }
+    uiPrint("\r");
+    for(int i = 0; i < width - 1; i++) {
+        uiPrint(" ");
     }
+    uiPrint("\r");
 
-    int spaces = width - 1 - strlen(printMessage);
+    int spaces = width - 1 - (int) strlen(printMessage);
+    if(spaces < 0) {
+        spaces = 0;
+    }
     for(int i = 0; i < spaces; i++) {
         uiPrint(" ");
     }
