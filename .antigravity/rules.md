@@ -53,3 +53,12 @@ Este repositorio (`cframo/GAMEBOYC-3DS-GameYob`) es un fork de desarrollo activo
 * Los commits deben ser atómicos y separar claramente las correcciones de plataforma de las modificaciones en el core.
 * Trabajar con diffs limpios: nunca dejar líneas de depuración huérfanas (`printf`, logs temporales) en el código a commitear.
 * Comandos permitidos para verificación del agente: `./dev.sh build` o `./dkp-make`. Prohibido ejecutar comandos de envío por red (`send`) sin intervención del usuario.
+
+---
+
+## 6. Convenciones de Código y Estilo
+1. **Indentación y Formato:** 4 espacios estrictos por nivel de indentación (`UseTab: Never`).
+2. **Posición de Llaves y Control:** Estilo K&R / Attach (`BreakBeforeBraces: Attach`) y sin espacio previo al paréntesis de control (`SpaceBeforeParens: Never`, ej. `if(cond) {`, `while(cond) {`).
+3. **Uso de `this->`:** En todas las clases del núcleo de emulación (`CPU`, `MMU`, `PPU`, `Cartridge`, `APU`, `Gameboy`, etc.), es obligatorio el uso explícito y sistemático de `this->` para acceder a variables miembro y métodos internos.
+4. **Punteros Nulos:** Uso estricto de `nullptr` para todo código nuevo o modificado bajo C++11. La sustitución de `NULL` heredado se realizará de forma progresiva, evitando reformatos masivos que ensucien el historial.
+5. **Bibliotecas de Terceros:** El código en `source/gb_apu/`, `include/gb_apu/`, `include/libs/stb_image/` e `include/libs/inih/` no debe reformatearse ni alterarse sin justificación estricta.

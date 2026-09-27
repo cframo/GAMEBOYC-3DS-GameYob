@@ -1,0 +1,50 @@
+---
+# .clang-format para GameYob 3DS (CTR)
+# Basado en las convenciones estilísticas históricas del proyecto
+
+Language: Cpp
+BasedOnStyle: LLVM
+Standard: c++11
+
+# --- Indentación y Formato Básico ---
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ColumnLimit: 120
+AccessModifierOffset: -4
+
+# --- Posición de Llaves (K&R / Attach) ---
+BreakBeforeBraces: Attach
+AllowShortFunctionsOnASingleLine: Inline
+AllowShortBlocksOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: Never
+
+# --- Espaciado en Control y Paréntesis ---
+# GameYob utiliza históricamente control sin espacio: if(cond), for(..), while(..)
+SpaceBeforeParens: Never
+SpacesInParentheses: false
+SpacesInSquareBrackets: false
+SpaceAfterCStyleCast: true
+SpaceBeforeAssignmentOperators: true
+
+# --- Punteros y Referencias ---
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# --- Gestión de Inclusiones ---
+SortIncludes: true
+IncludeBlocks: Preserve
+
+# --- Alineaciones ---
+AlignConsecutiveAssignments: None
+AlignConsecutiveDeclarations: None
+AlignTrailingComments: true
+AlignEscapedNewlines: Right
+AlignOperands: Align
+
+# --- Constructores y Lambdas ---
+ConstructorInitializerIndentWidth: 4
+ConstructorInitializerAllOnOneLineOrOnePerLine: false
+LambdaBodyIndentation: Signature
+...
