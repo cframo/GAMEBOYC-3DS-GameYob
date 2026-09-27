@@ -656,14 +656,14 @@ void mgrPowerOn(const char* romFile) {
 }
 
 void mgrPowerOff(bool save) {
-    if(gameboy != NULL && gameboy->isPoweredOn()) {
+    if(gameboy != NULL) {
         if(gameboy->cartridge != NULL) {
-            if(save) {
+            if(gameboy->isPoweredOn() && save) {
                 mgrWriteSave();
             }
 
             delete gameboy->cartridge;
-            gameboy->cartridge = NULL;
+            gameboy->cartridge = nullptr;
         }
 
         gameboy->powerOff();

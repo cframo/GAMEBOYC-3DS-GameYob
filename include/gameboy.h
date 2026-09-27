@@ -116,7 +116,7 @@ public:
 
     GameboySettings settings;
 
-    Cartridge* cartridge;
+    Cartridge* cartridge = nullptr;
 
     MMU* mmu;
     CPU* cpu;

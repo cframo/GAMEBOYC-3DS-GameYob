@@ -79,8 +79,8 @@ public:
     }
 
     inline u8* getRomBank(int bank) {
-        if(bank < 0 || bank >= this->totalRomBanks) {
-            return NULL;
+        if(bank < 0 || bank >= this->totalRomBanks || this->rom == nullptr) {
+            return nullptr;
         }
 
         return &this->rom[bank * 0x4000];
@@ -167,22 +167,22 @@ private:
             NULL
     };
 
-    Gameboy* gameboy;
+    Gameboy* gameboy = nullptr;
 
-    u8* rom;
+    u8* rom = nullptr;
 
     std::string romTitle;
-    int totalRomBanks;
-    int totalRamBanks;
-    MBCType mbcType;
-    bool rockmanMapper;
-    bool rumble;
+    int totalRomBanks = 0;
+    int totalRamBanks = 0;
+    MBCType mbcType = MBC0;
+    bool rockmanMapper = false;
+    bool rumble = false;
 
-    mbcRead readFunc;
-    mbcWrite writeFunc;
-    mbcUpdate updateFunc;
+    mbcRead readFunc = nullptr;
+    mbcWrite writeFunc = nullptr;
+    mbcUpdate updateFunc = nullptr;
 
-    u8* sram;
+    u8* sram = nullptr;
 
     struct {
         u32 seconds;

@@ -8,7 +8,10 @@
 #include "cartridge.h"
 #include "mmu.h"
 
-Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData, int saveSize) {
+Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData, int saveSize)
+    : gameboy(nullptr),
+      rom(nullptr),
+      sram(nullptr) {
     // Round number of banks to next power of two.
     this->totalRomBanks = (romSize + 0x3FFF) / 0x4000;
     this->totalRomBanks--;
@@ -51,6 +54,7 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
                 memcpy(&this->rom[0x8000], copy, roundedSize - 0x8000);
 
                 delete[] copy;
+                copy = nullptr;
             }
         }
     }
@@ -119,7 +123,7 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
             this->mbcType = HUC1;
             break;
         default:
-            if(this->gameboy->settings.printDebug != NULL) {
+            if(this->gameboy != nullptr && this->gameboy->settings.printDebug != nullptr) {
                 this->gameboy->settings.printDebug("Unsupported mapper value %02x\n", this->rom[0x0147]);
             }
 
@@ -149,7 +153,7 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
                 this->totalRamBanks = 16;
                 break;
             default:
-                if(this->gameboy->settings.printDebug != NULL) {
+                if(this->gameboy != nullptr && this->gameboy->settings.printDebug != nullptr) {
                     this->gameboy->settings.printDebug("Invalid RAM bank number: %x\nDefaulting to 4 banks.\n", this->getRawRamSize());
                 }
 
@@ -169,43 +173,43 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
 }
 
 Cartridge::~Cartridge() {
-    if(this->gameboy != NULL) {
-        this->gameboy->mmu->mapBankBlock(0x0, NULL);
-        this->gameboy->mmu->mapBankBlock(0x1, NULL);
-        this->gameboy->mmu->mapBankBlock(0x2, NULL);
-        this->gameboy->mmu->mapBankBlock(0x3, NULL);
-        this->gameboy->mmu->mapBankBlock(0x4, NULL);
-        this->gameboy->mmu->mapBankBlock(0x5, NULL);
-        this->gameboy->mmu->mapBankBlock(0x6, NULL);
-        this->gameboy->mmu->mapBankBlock(0x7, NULL);
-        this->gameboy->mmu->mapBankBlock(0xA, NULL);
-        this->gameboy->mmu->mapBankBlock(0xB, NULL);
+    if(this->gameboy != nullptr) {
+        this->gameboy->mmu->mapBankBlock(0x0, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x1, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x2, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x3, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x4, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x5, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x6, nullptr);
+        this->gameboy->mmu->mapBankBlock(0x7, nullptr);
+        this->gameboy->mmu->mapBankBlock(0xA, nullptr);
+        this->gameboy->mmu->mapBankBlock(0xB, nullptr);
 
-        this->gameboy->mmu->mapBankReadFunc(0xA, NULL);
-        this->gameboy->mmu->mapBankReadFunc(0xB, NULL);
+        this->gameboy->mmu->mapBankReadFunc(0xA, nullptr);
+        this->gameboy->mmu->mapBankReadFunc(0xB, nullptr);
 
-        this->gameboy->mmu->mapBankWriteFunc(0x0, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x1, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x2, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x3, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x4, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x5, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x6, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0x7, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0xA, NULL);
-        this->gameboy->mmu->mapBankWriteFunc(0xB, NULL);
+        this->gameboy->mmu->mapBankWriteFunc(0x0, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x1, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x2, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x3, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x4, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x5, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x6, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0x7, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0xA, nullptr);
+        this->gameboy->mmu->mapBankWriteFunc(0xB, nullptr);
 
-        this->gameboy = NULL;
+        this->gameboy = nullptr;
     }
 
-    if(this->rom != NULL) {
-        delete this->rom;
-        this->rom = NULL;
+    if(this->rom != nullptr) {
+        delete[] this->rom;
+        this->rom = nullptr;
     }
 
-    if(this->sram != NULL) {
-        delete this->sram;
-        this->sram = NULL;
+    if(this->sram != nullptr) {
+        delete[] this->sram;
+        this->sram = nullptr;
     }
 }
 

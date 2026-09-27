@@ -12,7 +12,7 @@
 static const u8 STATE_VERSION = 11;
 
 Gameboy::Gameboy() {
-    this->cartridge = NULL;
+    this->cartridge = nullptr;
 
     this->mmu = new MMU(this);
     this->cpu = new CPU(this);
@@ -24,7 +24,10 @@ Gameboy::Gameboy() {
 }
 
 Gameboy::~Gameboy() {
-    this->cartridge = NULL;
+    if(this->cartridge != nullptr) {
+        delete this->cartridge;
+        this->cartridge = nullptr;
+    }
 
     delete this->mmu;
     delete this->cpu;
