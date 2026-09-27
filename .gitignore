@@ -16,3 +16,4 @@ output/
 build/
 include/bios_bin.h
 include/dummy_bios_bin.h
+include/platform/
