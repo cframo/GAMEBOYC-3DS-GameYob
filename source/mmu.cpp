@@ -116,7 +116,14 @@ void MMU::reset() {
         if(this->biosMapped) {
             this->biosMapped = false;
             this->mapBanks();
-            this->gameboy->cpu->setA(this->gameboy->gbMode == MODE_CGB ? 0x11 : 0x01);
+            this->gameboy->mmu->writeIO(BIOS, val);
+            if(this->gameboy->gbMode == MODE_CGB) {
+                this->gameboy->cpu->setA(0x11);
+                this->gameboy->cpu->setB(this->gameboy->settings.gbaModeOption ? 0x01 : 0x00);
+            } else {
+                this->gameboy->cpu->setA(0x01);
+                this->gameboy->cpu->setB(0x00);
+            }
         }
     });
 

@@ -48,6 +48,13 @@ class CPU {
 public:
     CPU(Gameboy* gameboy);
     inline void setA(u8 val) { this->registers.r8[R8_A] = val; }
+    inline void setB(u8 val) { this->registers.r8[R8_B] = val; }
+    inline u8 getA() const { return this->registers.r8[R8_A]; }
+    inline u8 getB() const { return this->registers.r8[R8_B]; }
+    inline void setAF(u16 val) { this->registers.r16[R16_AF] = val; }
+    inline void setBC(u16 val) { this->registers.r16[R16_BC] = val; }
+    inline u16 getAF() const { return this->registers.r16[R16_AF]; }
+    inline u16 getBC() const { return this->registers.r16[R16_BC]; }
 
     void reset();
 
