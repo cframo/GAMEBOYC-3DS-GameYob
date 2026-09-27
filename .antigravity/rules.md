@@ -5,11 +5,15 @@ Este repositorio (`cframo/GAMEBOYC-3DS-GameYob`) es un fork de desarrollo activo
 
 ---
 
-## 2. Entorno y Herramientas de Compilación
-* **Toolchain:** DevkitARM (devkitPro) con soporte para `libctru` y `citro3d`.
-* **Estándar C/C++:** C++11 y C99 estrictos. No asumir soporte para bibliotecas estándar modernas de C++17/20 o características complejas que aumenten el overhead o rompan compatibilidad con la toolchain de 3DS.
-* **Comando de compilación:** Exclusivamente `./dkp-make`. No invocar `make` directamente ni alterar el target `TARGET := 3DS` en el `Makefile`.
-* **Infraestructura de compilación:** La carpeta `buildtools/` está absorbida de forma nativa en el árbol de trabajo. No reintroducir submódulos de Git ni archivos `.gitmodules`.
+## 2. Entorno y Herramientas (Contenedor Podman)
+* **Aislamiento:** La toolchain no está instalada en el host. Todo corre encapsulado vía Podman utilizando la imagen oficial `docker.io/devkitpro/devkitarm`.
+* **Herramientas y Wrappers disponibles:**
+  * `./dkp-make`: Compilación directa usando el contenedor.
+  * `./dkp-3dslink`: Wrapper de `3dslink` ejecutado con `--net=host` para despliegue por red local a la consola.
+  * `./dev.sh`: Script unificador del ciclo de desarrollo (`./dev.sh build`, `./dev.sh clean`, `./dev.sh send <IP>`).
+* **Restricción de comandos:** Prohibido invocar `make` o `3dslink` directamente en el host. Usar siempre `./dev.sh` o los scripts `./dkp-*`.
+* **Target y Makefiles:** Target exclusivo `TARGET := 3DS`. Prohibido modificar el `Makefile` para otros sistemas (NDS).
+* **Infraestructura:** La carpeta `buildtools/` está absorbida de forma nativa en el árbol de trabajo. No reintroducir submódulos de Git ni archivos `.gitmodules`.
 * **Artefactos ignorados:** No rastrear ni sugerir cambios sobre binarios `.shbin`, cabeceras generadas en `include/platform/`, `bios_bin.h`, `dummy_bios_bin.h` ni carpetas intermedias (`build/`, `output/`).
 
 ---
@@ -33,9 +37,10 @@ Este repositorio (`cframo/GAMEBOYC-3DS-GameYob`) es un fork de desarrollo activo
 ---
 
 ## 4. Reglas de Calidad de Código y Memoria
-1. **Gestión de memoria dinámica:** Es obligatorio usar `delete[]` para liberar cualquier arreglo reservado mediante `new[]` (verificable en `Cartridge` y `manager.cpp`). No tolerar discrepancias de punteros ni fugas de memoria.
-2. **Inicialización segura:** En C++11, reiniciar arreglos de `std::function` o callbacks mediante bucles asignando `nullptr`, nunca mediante `memset` para evitar la corrupción de estructuras polimórficas o vtables.
-3. **Optimización homebrew:** El rendimiento en la CPU ARM11 de la 3DS es crítico. Priorizar código predecible en caché, evitar asignaciones dinámicas en el bucle principal de emulación y evitar abstracciones innecesarias.
+1. **Estándar C/C++:** C++11 y C99 estrictos. Sin dependencias externas pesadas ni características de C++17/20.
+2. **Gestión de memoria dinámica:** Es obligatorio usar `delete[]` para liberar cualquier arreglo reservado mediante `new[]` (verificable en `Cartridge` y `manager.cpp`). No tolerar discrepancias de punteros ni fugas de memoria.
+3. **Inicialización segura:** En C++11, reiniciar arreglos de `std::function` o callbacks mediante bucles asignando `nullptr`, nunca mediante `memset` para evitar la corrupción de estructuras polimórficas o vtables.
+4. **Optimización homebrew:** El rendimiento en la CPU ARM11 de la 3DS es crítico. Priorizar código predecible en caché, evitar asignaciones dinámicas en el bucle principal de emulación y evitar abstracciones innecesarias.
 
 ---
 
@@ -47,3 +52,4 @@ Este repositorio (`cframo/GAMEBOYC-3DS-GameYob`) es un fork de desarrollo activo
   * `refactor(scope): ...`
 * Los commits deben ser atómicos y separar claramente las correcciones de plataforma de las modificaciones en el core.
 * Trabajar con diffs limpios: nunca dejar líneas de depuración huérfanas (`printf`, logs temporales) en el código a commitear.
+* Comandos permitidos para verificación del agente: `./dev.sh build` o `./dkp-make`. Prohibido ejecutar comandos de envío por red (`send`) sin intervención del usuario.

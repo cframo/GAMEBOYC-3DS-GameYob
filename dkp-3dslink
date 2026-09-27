@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+set -e
+
+podman run --rm -i \
+  --net=host \
+  -v "$PWD":/workspace:Z \
+  -w /workspace \
+  devkitpro/devkitarm \
+  3dslink "$@"
