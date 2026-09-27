@@ -207,15 +207,15 @@ private:
     bool mbc1RamMode;
 
     // MBC3
-    u8 mbc3Ctrl;
+    u8 mbc3Ctrl = 0;
     struct {
         u8 seconds;
         u8 minutes;
         u8 hours;
         u16 days;
         u8 ctrl;
-    } latchedRtc;
-    bool mbc3ZeroLatched;
+    } latchedRtc = {0, 0, 0, 0, 0};
+    bool mbc3ZeroLatched = false;
 
     // MBC6
     s32 mbc6RomBank1ALatch;

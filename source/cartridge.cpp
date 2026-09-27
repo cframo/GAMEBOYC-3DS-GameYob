@@ -11,7 +11,14 @@
 Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData, int saveSize)
     : gameboy(nullptr),
       rom(nullptr),
-      sram(nullptr) {
+      sram(nullptr),
+      mbc3Ctrl(0),
+      mbc3ZeroLatched(false) {
+    this->mbc3Ctrl = 0x00;
+    this->mbc3ZeroLatched = false;
+    memset(&this->rtcClock, 0, sizeof(this->rtcClock));
+    memset(&this->latchedRtc, 0, sizeof(this->latchedRtc));
+
     // Round number of banks to next power of two.
     this->totalRomBanks = (romSize + 0x3FFF) / 0x4000;
     this->totalRomBanks--;
@@ -225,7 +232,11 @@ void Cartridge::reset(Gameboy* gameboy) {
     this->mbc1RamMode = false;
 
     // MBC3
-    this->mbc3Ctrl = (u8) ((this->mbc3Ctrl & 0xC0) | ((this->rtcClock.days >> 8) & 1));
+    if(this->rtcClock.last == 0) {
+        this->mbc3Ctrl = 0x00;
+    } else {
+        this->mbc3Ctrl = (u8) ((this->mbc3Ctrl & 0xC0) | ((this->rtcClock.days >> 8) & 1));
+    }
     this->mbc3ZeroLatched = false;
     this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
     this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
@@ -421,6 +432,7 @@ void Cartridge::loadSave(std::istream& saveData, int saveSize) {
         saveData.read((char*) this->sram, bytesToRead);
     }
 
+    this->mbc3Ctrl = 0x00;
     memset(&this->rtcClock, 0, sizeof(this->rtcClock));
     memset(&this->latchedRtc, 0, sizeof(this->latchedRtc));
     this->mbc3ZeroLatched = false;
@@ -468,13 +480,14 @@ void Cartridge::loadSave(std::istream& saveData, int saveSize) {
 
             this->updateClock();
         } else {
-            this->rtcClock.last = (u64) time(nullptr);
+            this->rtcClock.last = 0;
             if(this->mbcType == MBC3) {
+                this->mbc3Ctrl = 0x00;
                 this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
                 this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
                 this->latchedRtc.hours = (u8) (this->rtcClock.hours & 0x1F);
                 this->latchedRtc.days = (u16) (this->rtcClock.days & 0x1FF);
-                this->latchedRtc.ctrl = this->mbc3Ctrl;
+                this->latchedRtc.ctrl = 0x00;
             }
         }
     }
