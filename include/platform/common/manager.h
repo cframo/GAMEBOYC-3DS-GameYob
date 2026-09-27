@@ -21,6 +21,7 @@ void mgrPowerOff(bool save = true);
 void mgrSelectRom();
 
 void mgrWriteSave();
+void mgrLoadSave();
 
 bool mgrStateExists(int stateNum);
 bool mgrLoadState(int stateNum);

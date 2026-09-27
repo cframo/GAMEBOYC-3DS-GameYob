@@ -162,14 +162,13 @@ Cartridge::Cartridge(std::istream& romData, int romSize, std::istream& saveData,
         }
     }
 
-    this->sram = new u8[this->totalRamBanks * 0x2000]();
-    saveData.read((char*) this->sram, this->totalRamBanks * 0x2000);
-
-    if(this->mbcType == MBC3 || this->mbcType == HUC3 || this->mbcType == TAMA5) {
-        saveData.read((char*) &this->rtcClock, sizeof(this->rtcClock));
+    if(this->totalRamBanks > 0) {
+        this->sram = new u8[this->totalRamBanks * 0x2000]();
     } else {
-        memset(&this->rtcClock, 0, sizeof(this->rtcClock));
+        this->sram = nullptr;
     }
+
+    this->loadSave(saveData, saveSize);
 }
 
 Cartridge::~Cartridge() {
@@ -226,7 +225,13 @@ void Cartridge::reset(Gameboy* gameboy) {
     this->mbc1RamMode = false;
 
     // MBC3
-    this->mbc3Ctrl = 0;
+    this->mbc3Ctrl = (u8) ((this->mbc3Ctrl & 0xC0) | ((this->rtcClock.days >> 8) & 1));
+    this->mbc3ZeroLatched = false;
+    this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
+    this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
+    this->latchedRtc.hours = (u8) (this->rtcClock.hours & 0x1F);
+    this->latchedRtc.days = (u16) (this->rtcClock.days & 0x1FF);
+    this->latchedRtc.ctrl = this->mbc3Ctrl;
 
     // MBC6
     this->mbc6RomBank1ALatch = 2;
@@ -394,10 +399,84 @@ void Cartridge::update() {
 }
 
 void Cartridge::save(std::ostream& data) {
-    data.write((char*) this->sram, this->totalRamBanks * 0x2000);
+    this->updateClock();
+
+    int sramSize = this->totalRamBanks * 0x2000;
+    if(this->sram != nullptr && sramSize > 0) {
+        data.write((char*) this->sram, sramSize);
+    }
 
     if(this->mbcType == MBC3 || this->mbcType == HUC3 || this->mbcType == TAMA5) {
+        if(this->mbcType == MBC3) {
+            this->rtcClock.months = (u32) this->mbc3Ctrl;
+        }
         data.write((char*) &this->rtcClock, sizeof(this->rtcClock));
+    }
+}
+
+void Cartridge::loadSave(std::istream& saveData, int saveSize) {
+    int sramSize = this->totalRamBanks * 0x2000;
+    if(this->sram != nullptr && sramSize > 0 && saveSize > 0) {
+        int bytesToRead = saveSize < sramSize ? saveSize : sramSize;
+        saveData.read((char*) this->sram, bytesToRead);
+    }
+
+    memset(&this->rtcClock, 0, sizeof(this->rtcClock));
+    memset(&this->latchedRtc, 0, sizeof(this->latchedRtc));
+    this->mbc3ZeroLatched = false;
+
+    if(this->mbcType == MBC3 || this->mbcType == HUC3 || this->mbcType == TAMA5) {
+        int rtcOffset = sramSize;
+        int remaining = saveSize - rtcOffset;
+
+        if(this->mbcType == MBC3 && remaining >= 48) {
+            s32 vbaCur[5];
+            s32 vbaLatched[5];
+            u64 vbaTime = 0;
+
+            saveData.seekg(rtcOffset);
+            saveData.read((char*) vbaCur, sizeof(vbaCur));
+            saveData.read((char*) vbaLatched, sizeof(vbaLatched));
+            saveData.read((char*) &vbaTime, sizeof(vbaTime));
+
+            this->rtcClock.seconds = (u32) (vbaCur[0] & 0x3F);
+            this->rtcClock.minutes = (u32) (vbaCur[1] & 0x3F);
+            this->rtcClock.hours = (u32) (vbaCur[2] & 0x1F);
+            this->rtcClock.days = (u32) ((vbaCur[3] & 0xFF) | ((vbaCur[4] & 1) << 8));
+            this->mbc3Ctrl = (u8) (vbaCur[4] & 0xC1);
+            this->rtcClock.last = vbaTime;
+
+            this->latchedRtc.seconds = (u8) (vbaLatched[0] & 0x3F);
+            this->latchedRtc.minutes = (u8) (vbaLatched[1] & 0x3F);
+            this->latchedRtc.hours = (u8) (vbaLatched[2] & 0x1F);
+            this->latchedRtc.days = (u16) ((vbaLatched[3] & 0xFF) | ((vbaLatched[4] & 1) << 8));
+            this->latchedRtc.ctrl = (u8) (vbaLatched[4] & 0xC1);
+
+            this->updateClock();
+        } else if(remaining >= (int) sizeof(this->rtcClock)) {
+            saveData.seekg(rtcOffset);
+            saveData.read((char*) &this->rtcClock, sizeof(this->rtcClock));
+
+            if(this->mbcType == MBC3) {
+                this->mbc3Ctrl = (u8) (this->rtcClock.months & 0xC1);
+                this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
+                this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
+                this->latchedRtc.hours = (u8) (this->rtcClock.hours & 0x1F);
+                this->latchedRtc.days = (u16) (this->rtcClock.days & 0x1FF);
+                this->latchedRtc.ctrl = this->mbc3Ctrl;
+            }
+
+            this->updateClock();
+        } else {
+            this->rtcClock.last = (u64) time(nullptr);
+            if(this->mbcType == MBC3) {
+                this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
+                this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
+                this->latchedRtc.hours = (u8) (this->rtcClock.hours & 0x1F);
+                this->latchedRtc.days = (u16) (this->rtcClock.days & 0x1FF);
+                this->latchedRtc.ctrl = this->mbc3Ctrl;
+            }
+        }
     }
 }
 
@@ -560,15 +639,15 @@ u8 Cartridge::m3r(u16 addr) {
     if(this->sramEnabled) {
         switch(this->sramBank) { // Check for RTC register
             case 0x8:
-                return (u8) this->rtcClock.seconds;
+                return (u8) (this->latchedRtc.seconds & 0x3F);
             case 0x9:
-                return (u8) this->rtcClock.minutes;
+                return (u8) (this->latchedRtc.minutes & 0x3F);
             case 0xA:
-                return (u8) this->rtcClock.hours;
+                return (u8) (this->latchedRtc.hours & 0x1F);
             case 0xB:
-                return (u8) (this->rtcClock.days & 0xFF);
+                return (u8) (this->latchedRtc.days & 0xFF);
             case 0xC:
-                return this->mbc3Ctrl;
+                return (u8) ((this->latchedRtc.ctrl & 0xC0) | ((this->latchedRtc.days >> 8) & 1));
             default: // Not an RTC register
                 return this->readSram((u16) (addr & 0x1FFF));
         }
@@ -777,15 +856,15 @@ void Cartridge::m3w(u16 addr, u8 val) {
             break;
         case 0x6: /* 6000 - 7FFF */
         case 0x7:
-            if(val) {
-                this->latchClock();
-
-                if(this->rtcClock.days > 0x1FF) {
-                    this->mbc3Ctrl |= 0x80;
-                    this->rtcClock.days &= 0x1FF;
+            if(val == 0x00) {
+                this->mbc3ZeroLatched = true;
+            } else if(val == 0x01) {
+                if(this->mbc3ZeroLatched) {
+                    this->latchClock();
                 }
-
-                this->mbc3Ctrl = (u8) ((this->mbc3Ctrl & ~1) | ((this->rtcClock.days >> 8) & 1));
+                this->mbc3ZeroLatched = false;
+            } else {
+                this->mbc3ZeroLatched = false;
             }
 
             break;
@@ -797,40 +876,40 @@ void Cartridge::m3w(u16 addr, u8 val) {
 
             switch(this->sramBank) { // Check for RTC register
                 case 0x8:
-                    if(this->rtcClock.seconds != val) {
-                        this->rtcClock.seconds = val;
-                    }
-
+                    this->updateClock();
+                    this->rtcClock.seconds = val & 0x3F;
+                    this->latchedRtc.seconds = (u8) this->rtcClock.seconds;
+                    this->rtcClock.last = (u64) time(nullptr);
                     return;
                 case 0x9:
-                    if(this->rtcClock.minutes != val) {
-                        this->rtcClock.minutes = val;
-                    }
-
+                    this->updateClock();
+                    this->rtcClock.minutes = val & 0x3F;
+                    this->latchedRtc.minutes = (u8) this->rtcClock.minutes;
+                    this->rtcClock.last = (u64) time(nullptr);
                     return;
                 case 0xA:
-                    if(this->rtcClock.hours != val) {
-                        this->rtcClock.hours = val;
-                    }
-
+                    this->updateClock();
+                    this->rtcClock.hours = val & 0x1F;
+                    this->latchedRtc.hours = (u8) this->rtcClock.hours;
+                    this->rtcClock.last = (u64) time(nullptr);
                     return;
                 case 0xB:
-                    if((this->rtcClock.days & 0xff) != val) {
-                        this->rtcClock.days &= 0x100;
-                        this->rtcClock.days |= val;
-                    }
-
+                    this->updateClock();
+                    this->rtcClock.days = (this->rtcClock.days & 0x100) | val;
+                    this->latchedRtc.days = (u16) this->rtcClock.days;
+                    this->rtcClock.last = (u64) time(nullptr);
                     return;
                 case 0xC:
-                    if(this->mbc3Ctrl != val) {
-                        this->rtcClock.days &= 0xFF;
-                        this->rtcClock.days |= (val & 1) << 8;
-                        this->mbc3Ctrl = val;
-                    }
-
+                    this->updateClock();
+                    this->rtcClock.days = (this->rtcClock.days & 0xFF) | ((val & 1) << 8);
+                    this->mbc3Ctrl = (u8) (val & 0xC1);
+                    this->latchedRtc.ctrl = this->mbc3Ctrl;
+                    this->latchedRtc.days = (u16) this->rtcClock.days;
+                    this->rtcClock.last = (u64) time(nullptr);
                     return;
                 default: // Not an RTC register
                     this->writeSram((u16) (addr & 0x1FFF), val);
+                    break;
             }
 
             break;
@@ -1685,24 +1764,74 @@ static u32 daysInLeapMonth[12] = {
         31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31
 };
 
-void Cartridge::latchClock() {
-    time_t now;
-    time(&now);
+void Cartridge::updateClock() {
+    time_t now = time(nullptr);
+    if(this->rtcClock.last == 0) {
+        this->rtcClock.last = (u64) now;
+        return;
+    }
 
-    time_t difference = (time_t) (now - this->rtcClock.last);
-    struct tm* lt = gmtime((const time_t*) &difference);
+    if(now <= (time_t) this->rtcClock.last) {
+        this->rtcClock.last = (u64) now;
+        return;
+    }
 
-    this->rtcClock.seconds += lt->tm_sec;
-    OVERFLOW_VAL(this->rtcClock.seconds, 60, this->rtcClock.minutes);
-    this->rtcClock.minutes += lt->tm_min;
-    OVERFLOW_VAL(this->rtcClock.minutes, 60, this->rtcClock.hours);
-    this->rtcClock.hours += lt->tm_hour;
-    OVERFLOW_VAL(this->rtcClock.hours, 24, this->rtcClock.days);
-    this->rtcClock.days += lt->tm_mday - 1;
-    OVERFLOW_VAL(this->rtcClock.days, (this->rtcClock.years & 3) == 0 ? daysInLeapMonth[this->rtcClock.months % 12] : daysInMonth[this->rtcClock.months % 12], this->rtcClock.months);
-    this->rtcClock.months += lt->tm_mon;
-    OVERFLOW_VAL(this->rtcClock.months, 12, this->rtcClock.years);
-    this->rtcClock.years += lt->tm_year - 70;
-
+    time_t diff = now - (time_t) this->rtcClock.last;
     this->rtcClock.last = (u64) now;
+
+    if(this->mbcType == MBC3) {
+        // If timer is halted (bit 6 of DH / mbc3Ctrl), time does not advance
+        if(this->mbc3Ctrl & 0x40) {
+            return;
+        }
+
+        u64 seconds = this->rtcClock.seconds + (diff % 60);
+        diff /= 60;
+        u64 minutes = this->rtcClock.minutes + (diff % 60) + (seconds / 60);
+        seconds %= 60;
+        diff /= 60;
+        u64 hours = this->rtcClock.hours + (diff % 24) + (minutes / 60);
+        minutes %= 60;
+        diff /= 24;
+        u64 days = this->rtcClock.days + diff + (hours / 24);
+        hours %= 24;
+
+        if(days > 511) {
+            this->mbc3Ctrl |= 0x80; // Set day counter carry flag
+            days %= 512;
+        }
+
+        this->rtcClock.seconds = (u32) seconds;
+        this->rtcClock.minutes = (u32) minutes;
+        this->rtcClock.hours = (u32) hours;
+        this->rtcClock.days = (u32) days;
+        this->mbc3Ctrl = (u8) ((this->mbc3Ctrl & ~1) | ((this->rtcClock.days >> 8) & 1));
+    } else if(this->mbcType == HUC3) {
+        struct tm* lt = gmtime((const time_t*) &diff);
+        if(lt != nullptr) {
+            this->rtcClock.seconds += lt->tm_sec;
+            OVERFLOW_VAL(this->rtcClock.seconds, 60, this->rtcClock.minutes);
+            this->rtcClock.minutes += lt->tm_min;
+            OVERFLOW_VAL(this->rtcClock.minutes, 60, this->rtcClock.hours);
+            this->rtcClock.hours += lt->tm_hour;
+            OVERFLOW_VAL(this->rtcClock.hours, 24, this->rtcClock.days);
+            this->rtcClock.days += lt->tm_mday - 1;
+            OVERFLOW_VAL(this->rtcClock.days, (this->rtcClock.years & 3) == 0 ? daysInLeapMonth[this->rtcClock.months % 12] : daysInMonth[this->rtcClock.months % 12], this->rtcClock.months);
+            this->rtcClock.months += lt->tm_mon;
+            OVERFLOW_VAL(this->rtcClock.months, 12, this->rtcClock.years);
+            this->rtcClock.years += lt->tm_year - 70;
+        }
+    }
+}
+
+void Cartridge::latchClock() {
+    this->updateClock();
+
+    if(this->mbcType == MBC3) {
+        this->latchedRtc.seconds = (u8) (this->rtcClock.seconds & 0x3F);
+        this->latchedRtc.minutes = (u8) (this->rtcClock.minutes & 0x3F);
+        this->latchedRtc.hours = (u8) (this->rtcClock.hours & 0x1F);
+        this->latchedRtc.days = (u16) (this->rtcClock.days & 0x1FF);
+        this->latchedRtc.ctrl = this->mbc3Ctrl;
+    }
 }

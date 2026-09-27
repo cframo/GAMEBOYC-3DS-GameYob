@@ -716,6 +716,24 @@ void mgrWriteSave() {
     stream.close();
 }
 
+void mgrLoadSave() {
+    if(gameboy == nullptr || gameboy->cartridge == nullptr || romName.empty()) {
+        return;
+    }
+
+    std::ifstream stream(romName + ".sav", std::ios::binary | std::ios::ate);
+    if(!stream.is_open()) {
+        systemPrintDebug("Failed to open save file: %s\n", strerror(errno));
+        return;
+    }
+
+    int saveSize = (int) stream.tellg();
+    stream.seekg(0);
+
+    gameboy->cartridge->loadSave(stream, saveSize);
+    stream.close();
+}
+
 const std::string mgrGetStateName(int stateNum) {
     std::stringstream nameStream;
     if(stateNum == -1) {
