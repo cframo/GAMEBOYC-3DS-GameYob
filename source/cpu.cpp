@@ -49,12 +49,25 @@ void CPU::reset() {
     this->ime = false;
     this->imeCycle = 0;
 
+    this->registers.r16[R16_SP] = 0xFFFE;
+    this->registers.r16[R16_DE] = 0x00D8;
+    this->registers.r16[R16_HL] = 0x014D;
+    this->registers.r8[R8_F] = 0xB0;
+
     if(this->gameboy->gbMode == MODE_CGB) {
         this->registers.r8[R8_A] = 0x11;
         this->registers.r8[R8_B] = this->gameboy->settings.gbaModeOption ? 0x01 : 0x00;
+        this->registers.r8[R8_C] = 0x00;
     } else {
         this->registers.r8[R8_A] = 0x01;
         this->registers.r8[R8_B] = 0x00;
+        this->registers.r8[R8_C] = 0x13;
+    }
+
+    if(this->gameboy->mmu->isBiosMapped()) {
+        this->registers.r16[R16_PC] = 0x0000;
+    } else {
+        this->registers.r16[R16_PC] = 0x0100;
     }
 
     this->gameboy->mmu->mapIOWriteFunc(IF, [this](u16 addr, u8 val) -> void {

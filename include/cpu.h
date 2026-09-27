@@ -53,8 +53,16 @@ public:
     inline u8 getB() const { return this->registers.r8[R8_B]; }
     inline void setAF(u16 val) { this->registers.r16[R16_AF] = val; }
     inline void setBC(u16 val) { this->registers.r16[R16_BC] = val; }
+    inline void setDE(u16 val) { this->registers.r16[R16_DE] = val; }
+    inline void setHL(u16 val) { this->registers.r16[R16_HL] = val; }
+    inline void setSP(u16 val) { this->registers.r16[R16_SP] = val; }
+    inline void setPC(u16 val) { this->registers.r16[R16_PC] = val; }
     inline u16 getAF() const { return this->registers.r16[R16_AF]; }
     inline u16 getBC() const { return this->registers.r16[R16_BC]; }
+    inline u16 getDE() const { return this->registers.r16[R16_DE]; }
+    inline u16 getHL() const { return this->registers.r16[R16_HL]; }
+    inline u16 getSP() const { return this->registers.r16[R16_SP]; }
+    inline u16 getPC() const { return this->registers.r16[R16_PC]; }
 
     void reset();
 

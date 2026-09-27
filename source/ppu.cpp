@@ -109,6 +109,13 @@ void PPU::reset() {
 
     this->mapBanks();
 
+    if((this->gameboy->mmu->readIO(LCDC) & 0x80) != 0) {
+        this->gameboy->mmu->writeIO(LY, 0);
+        this->gameboy->mmu->writeIO(STAT, (u8) ((this->gameboy->mmu->readIO(STAT) & ~3) | LCD_ACCESS_OAM));
+        this->lastScanlineCycle = 0;
+        this->gameboy->cpu->setEventCycle(modeCycles[LCD_ACCESS_OAM]);
+    }
+
     this->gameboy->mmu->mapIOReadFunc(BCPD, [this](u16 addr) -> u8 {
         if(this->gameboy->gbMode == MODE_CGB) {
             return this->rawBgPalette[this->gameboy->mmu->readIO(BCPS) & 0x3F];

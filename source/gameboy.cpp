@@ -1,3 +1,5 @@
+#include <string.h>
+
 #include "apu.h"
 #include "cartridge.h"
 #include "cpu.h"
@@ -12,6 +14,7 @@
 static const u8 STATE_VERSION = 11;
 
 Gameboy::Gameboy() {
+    memset(&this->settings, 0, sizeof(this->settings));
     this->cartridge = nullptr;
 
     this->mmu = new MMU(this);
