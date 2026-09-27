@@ -449,67 +449,108 @@ void gfxDrawScreen() {
 
     // Draw the screen.
     if(screenInit) {
-        // Calculate the VBO dimensions.
-        int screenWidth = 256;
-        int screenHeight = 224;
-        if(scaleMode == 1) {
-            screenWidth *= 1.25f;
-            screenHeight *= 1.25f;
-        } else if(scaleMode == 2) {
-            screenWidth *= 1.50f;
-            screenHeight *= 1.50f;
-        } else if(scaleMode == 3) {
-            screenWidth *= viewportHeight / (float) screenHeight;
-            screenHeight = viewportHeight;
-        } else if(scaleMode == 4) {
-            screenWidth = viewportWidth;
-            screenHeight = viewportHeight;
+        bool hasCustomBorder = customBordersEnabled && borderInit;
+
+        float screenWidth = 0.0f;
+        float screenHeight = 0.0f;
+        float u1 = 0.0f;
+        float v1 = 0.0f;
+        float u2 = 0.0f;
+        float v2 = 0.0f;
+
+        if(hasCustomBorder) {
+            screenWidth = 256.0f;
+            screenHeight = 224.0f;
+            if(borderScaleMode == 1) {
+                if(scaleMode == 1) {
+                    screenWidth *= 1.25f;
+                    screenHeight *= 1.25f;
+                } else if(scaleMode == 2) {
+                    screenWidth *= 1.50f;
+                    screenHeight *= 1.50f;
+                } else if(scaleMode == 3) {
+                    screenWidth *= (float) viewportHeight / 224.0f;
+                    screenHeight = (float) viewportHeight;
+                } else if(scaleMode == 4) {
+                    screenWidth = (float) viewportWidth;
+                    screenHeight = (float) viewportHeight;
+                }
+            }
+
+            u1 = 0.0f;
+            v1 = 0.0f;
+            u2 = 256.0f / 256.0f;
+            v2 = 224.0f / 256.0f;
+
+            if(scaleMode != 0 && scaleFilter == 1) {
+                const float baseFilterMod = 0.25f / (float) screenTexSize;
+                u2 -= baseFilterMod;
+                v2 -= baseFilterMod;
+            }
+        } else {
+            screenWidth = 160.0f;
+            screenHeight = 144.0f;
+            if(scaleMode == 1) {
+                screenWidth *= 1.25f;
+                screenHeight *= 1.25f;
+            } else if(scaleMode == 2) {
+                screenWidth *= 1.50f;
+                screenHeight *= 1.50f;
+            } else if(scaleMode == 3) {
+                screenHeight = (float) viewportHeight;
+                screenWidth = screenHeight * (160.0f / 144.0f);
+            } else if(scaleMode == 4) {
+                screenWidth = (float) viewportWidth;
+                screenHeight = (float) viewportHeight;
+            }
+
+            u1 = 48.0f / 256.0f;
+            v1 = 40.0f / 256.0f;
+            u2 = 208.0f / 256.0f;
+            v2 = 184.0f / 256.0f;
+
+            if(scaleMode != 0 && scaleFilter == 1) {
+                const float baseFilterMod = 0.25f / (float) screenTexSize;
+                u1 += baseFilterMod;
+                v1 += baseFilterMod;
+                u2 -= baseFilterMod;
+                v2 -= baseFilterMod;
+            }
         }
 
         // Calculate VBO points.
-        const float x1 = ((int) viewportWidth - screenWidth) / 2.0f;
-        const float y1 = ((int) viewportHeight - screenHeight) / 2.0f;
+        const float x1 = ((float) viewportWidth - screenWidth) / 2.0f;
+        const float y1 = ((float) viewportHeight - screenHeight) / 2.0f;
         const float x2 = x1 + screenWidth;
         const float y2 = y1 + screenHeight;
-
-        static const float baseTX2 = 256.0f / 256.0f;
-        static const float baseTY2 = 224.0f / 256.0f;
-        static const float baseFilterMod = 0.25f / 256.0f;
-
-        float tx2 = baseTX2;
-        float ty2 = baseTY2;
-        if(scaleMode != 0 && scaleFilter == 1) {
-            tx2 -= baseFilterMod;
-            ty2 -= baseFilterMod;
-        }
 
         C3D_TexBind(0, &screenTexture);
 
         C3D_ImmDrawBegin(GPU_TRIANGLES);
 
         C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(0, 0, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f);
 
         C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(tx2, ty2, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f);
 
         C3D_ImmSendAttrib(x2, y1, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(tx2, 0, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u2, v1, 0.0f, 0.0f);
 
         C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(0, 0, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f);
 
         C3D_ImmSendAttrib(x1, y2, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(0, ty2, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u1, v2, 0.0f, 0.0f);
 
         C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f);
-        C3D_ImmSendAttrib(tx2, ty2, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f);
 
         C3D_ImmDrawEnd();
     }
 
     // Draw the border.
-    if(borderInit && scaleMode != 4) {
+    if(borderInit && customBordersEnabled && scaleMode != 4) {
         // Calculate VBO points.
         int scaledBorderWidth = borderWidth;
         int scaledBorderHeight = borderHeight;
