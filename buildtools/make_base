@@ -1,0 +1,104 @@
+# Reglas de compilación para GameYob 3DS (devkitARM + libctru)
+
+DEVKITARM ?= $(DEVKITPRO)/devkitARM
+PREFIX    := $(DEVKITARM)/bin/arm-none-eabi-
+
+CC      := $(PREFIX)gcc
+CXX     := $(PREFIX)g++
+AS      := $(PREFIX)as
+LD      := $(PREFIX)g++
+OBJCOPY := $(PREFIX)objcopy
+STRIP   := $(PREFIX)strip
+
+# Arquitectura CTR (ARM11 MPCore de Nintendo 3DS)
+ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mtp=soft
+
+# Inclusión de cabeceras y librerías
+INCLUDES := $(foreach dir,$(INCLUDE_DIRS),-I$(dir)) \
+            $(foreach dir,$(SOURCE_DIRS),-I$(dir)) \
+            $(foreach dir,$(LIBRARY_DIRS),-I$(dir)/include)
+
+LIBPATHS := $(foreach dir,$(LIBRARY_DIRS),-L$(dir)/lib)
+LIBS     := $(foreach lib,$(LIBRARIES),-l$(lib)) -lm
+
+# Flags de compilación (gnu++11 para tolerar C++ legado y la palabra reservada 'register')
+# Fallbacks y saneamiento de versión
+ifeq ($(strip $(VERSION_MAJOR)),)
+    VERSION_MAJOR := 1
+endif
+ifeq ($(strip $(VERSION_MINOR)),)
+    VERSION_MINOR := 0
+endif
+ifeq ($(strip $(VERSION_MICRO)),)
+    VERSION_MICRO := 0
+endif
+
+# Limpiar prefijo 'v' si el tag de git lo incluye (ej: v1 -> 1)
+VERSION_MAJOR := $(patsubst v%,%,$(VERSION_MAJOR))
+VERSION_MINOR := $(patsubst v%,%,$(VERSION_MINOR))
+VERSION_MICRO := $(patsubst v%,%,$(VERSION_MICRO))
+
+VERSION_DEFS := -DVERSION_MAJOR=$(VERSION_MAJOR) -DVERSION_MINOR=$(VERSION_MINOR) -DVERSION_MICRO=$(VERSION_MICRO)
+
+COMMON_FLAGS := $(ARCH) $(BUILD_FLAGS) $(VERSION_DEFS) $(INCLUDES) -Wall -Wno-narrowing -Wno-unused-result
+CFLAGS       := $(COMMON_FLAGS) -std=gnu11
+CXXFLAGS     := $(COMMON_FLAGS) -std=gnu++11 -fno-rtti -fno-exceptions
+ASFLAGS      := $(ARCH) $(INCLUDES)
+LDFLAGS      := -specs=3dsx.specs $(ARCH) $(LIBPATHS) $(LIBS)
+
+# Rastreo recursivo de archivos fuente
+# Filtrar plataformas ajenas (Switch y SDL/PC)
+EXCLUDE_DIRS := -not -path "*/platform/sdl/*" -not -path "*/platform/switch/*"
+C_FILES   := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f -name "*.c" 2>/dev/null)
+CPP_FILES := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f -name "*.cpp" 2>/dev/null)
+S_FILES   := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f \( -name "*.s" -o -name "*.S" \) 2>/dev/null)
+
+TARGET_BUILD := $(BUILD_DIR)/$(TARGET)
+OBJS := $(patsubst %,$(TARGET_BUILD)/%.o,$(C_FILES) $(CPP_FILES) $(S_FILES))
+
+ELF  := $(OUTPUT_DIR)/$(NAME).elf
+3DSX := $(OUTPUT_DIR)/$(NAME).3dsx
+SMDH := $(OUTPUT_DIR)/$(NAME).smdh
+
+.PHONY: all clean
+
+all: $(3DSX)
+
+$(3DSX): $(ELF) $(SMDH)
+	@mkdir -p $(OUTPUT_DIR)
+	@echo "--- Empaquetando 3DSX: $@ ---"
+	3dsxtool $(ELF) $@ --smdh=$(SMDH)
+
+$(SMDH):
+	@mkdir -p $(OUTPUT_DIR)
+	@echo "--- Generando metadatos SMDH: $@ ---"
+	@if [ -f "$(ICON)" ]; then smdhtool --create "$(NAME)" "$(DESCRIPTION)" "$(AUTHOR)" "$(ICON)" "$@"; else smdhtool --create "$(NAME)" "$(DESCRIPTION)" "$(AUTHOR)" "" "$@"; fi
+
+$(ELF): $(OBJS)
+	@mkdir -p $(OUTPUT_DIR)
+	@echo "--- Enlazando ELF: $@ ---"
+	$(LD) $(ARCH) -specs=3dsx.specs -o $@ $(OBJS) $(LIBPATHS) $(LIBS)
+
+$(TARGET_BUILD)/%.c.o: %.c
+	@mkdir -p $(dir $@)
+	@echo "CC  $<"
+	$(CC) $(CFLAGS) -c $< -o $@
+
+$(TARGET_BUILD)/%.cpp.o: %.cpp
+	@mkdir -p $(dir $@)
+	@echo "CXX $<"
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(TARGET_BUILD)/%.s.o: %.s
+	@mkdir -p $(dir $@)
+	@echo "AS  $<"
+	$(CC) $(ASFLAGS) -c $< -o $@
+
+$(TARGET_BUILD)/%.S.o: %.S
+	@mkdir -p $(dir $@)
+	@echo "AS  $<"
+	$(CC) $(ASFLAGS) -c $< -o $@
+
+clean:
+	@echo "--- Limpiando archivos objeto y binarios ---"
+	rm -rf $(BUILD_DIR) $(OUTPUT_DIR)

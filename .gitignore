@@ -9,3 +9,10 @@ build
 output
 
 gameyob.ini
+build_errors.log
+dkp-make
+*.shbin
+output/
+build/
+include/bios_bin.h
+include/dummy_bios_bin.h
