@@ -962,12 +962,12 @@ void mgrRun() {
     }
 
     auto time = std::chrono::high_resolution_clock::now();
-#ifdef BACKEND_3DS
-    if(mgrGetFastForward() || (!menuOn && !emulationPaused && gameboy->isPoweredOn()) || (time - lastFrameTime).count() >= NS_PER_FRAME) {
-#else
     if(mgrGetFastForward() || (time - lastFrameTime).count() >= NS_PER_FRAME) {
-#endif
-        lastFrameTime = time;
+        if(mgrGetFastForward() || (time - lastFrameTime).count() > NS_PER_FRAME * 2) {
+            lastFrameTime = time;
+        } else {
+            lastFrameTime += std::chrono::nanoseconds(NS_PER_FRAME);
+        }
 
         inputUpdate();
 
