@@ -54,12 +54,13 @@ private:
 
     void mapBanks();
 
-    void checkLYC();
+    __attribute__((always_inline)) inline void checkLYC();
+    __attribute__((always_inline)) inline void updateStatSignal();
 
     void updateLineTile(u8 map, u8 x, u8 y);
     void updateLineSprites();
 
-    void updateScanline();
+    __attribute__((always_inline)) inline void updateScanline();
     void drawPixel(u8 x, u8 y);
     void drawScanline(u8 scanline);
 
@@ -68,6 +69,7 @@ private:
     u64 lastScanlineCycle;
     u64 lastPhaseCycle;
     bool halfSpeed;
+    bool statInterruptSignal;
 
     u8 scanlineX;
 

@@ -78,6 +78,7 @@ void PPU::reset() {
     this->lastScanlineCycle = 0;
     this->lastPhaseCycle = 0;
     this->halfSpeed = false;
+    this->statInterruptSignal = false;
 
     this->scanlineX = 0;
 
@@ -114,6 +115,7 @@ void PPU::reset() {
         this->gameboy->mmu->writeIO(STAT, (u8) ((this->gameboy->mmu->readIO(STAT) & ~3) | LCD_ACCESS_OAM));
         this->lastScanlineCycle = 0;
         this->gameboy->cpu->setEventCycle(modeCycles[LCD_ACCESS_OAM]);
+        this->updateStatSignal();
     }
 
     this->gameboy->mmu->mapIOReadFunc(BCPD, [this](u16 addr) -> u8 {
@@ -139,17 +141,20 @@ void PPU::reset() {
         if((curr & 0x80) && !(val & 0x80)) {
             this->gameboy->mmu->writeIO(LY, 0);
             this->gameboy->mmu->writeIO(STAT, (u8) ((this->gameboy->mmu->readIO(STAT) & ~3) | LCD_HBLANK));
+            this->updateStatSignal();
         } else if(!(curr & 0x80) && (val & 0x80)) {
             this->gameboy->mmu->writeIO(LY, 0);
             this->gameboy->mmu->writeIO(STAT, (u8) ((this->gameboy->mmu->readIO(STAT) & ~3) | LCD_ACCESS_OAM));
 
             this->lastScanlineCycle = this->gameboy->cpu->getCycle() - (4 << this->halfSpeed);
             this->gameboy->cpu->setEventCycle(this->lastScanlineCycle + modeCycles[LCD_ACCESS_OAM]);
+            this->updateStatSignal();
         }
     });
 
     this->gameboy->mmu->mapIOWriteFunc(STAT, [this](u16 addr, u8 val) -> void {
         this->gameboy->mmu->writeIO(STAT, (u8) ((this->gameboy->mmu->readIO(STAT) & 0x7) | (val & 0xF8)));
+        this->updateStatSignal();
     });
 
     this->gameboy->mmu->mapIOWriteFunc(LY, [this](u16 addr, u8 val) -> void {
@@ -332,20 +337,42 @@ void PPU::mapBanks() {
     this->gameboy->mmu->mapBankBlock(0x9, this->vram[bank] + 0x1000);
 }
 
-inline void PPU::checkLYC() {
+__attribute__((always_inline)) inline void PPU::updateStatSignal() {
+    u8 lcdc = this->gameboy->mmu->readIO(LCDC);
+    if((lcdc & 0x80) == 0) {
+        this->statInterruptSignal = false;
+        return;
+    }
+
+    u8 stat = this->gameboy->mmu->readIO(STAT);
+    u8 mode = (u8) (stat & 3);
+
+    bool lycCondition = ((stat & 0x40) != 0) && ((stat & 0x04) != 0);
+    bool oamCondition = ((stat & 0x20) != 0) && (mode == LCD_ACCESS_OAM);
+    bool vblankCondition = ((stat & 0x10) != 0) && (mode == LCD_VBLANK);
+    bool hblankCondition = ((stat & 0x08) != 0) && (mode == LCD_HBLANK);
+
+    bool newSignal = lycCondition || oamCondition || vblankCondition || hblankCondition;
+    if(!this->statInterruptSignal && newSignal) {
+        this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) | INT_LCD));
+    }
+
+    this->statInterruptSignal = newSignal;
+}
+
+__attribute__((always_inline)) inline void PPU::checkLYC() {
     u8 stat = this->gameboy->mmu->readIO(STAT);
     if(this->gameboy->mmu->readIO(LY) == this->gameboy->mmu->readIO(LYC)) {
         this->gameboy->mmu->writeIO(STAT, (u8) (stat | 4));
-        if(stat & 0x40) {
-            this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) | INT_LCD));
-        }
     } else {
         this->gameboy->mmu->writeIO(STAT, (u8) (stat & ~4));
     }
+    this->updateStatSignal();
 }
 
 void PPU::update() {
     if((this->gameboy->mmu->readIO(LCDC) & 0x80) == 0) {
+        this->statInterruptSignal = false;
         this->lastScanlineCycle = this->gameboy->cpu->getCycle();
 
         this->gameboy->mmu->writeIO(LY, 0);
@@ -369,8 +396,6 @@ void PPU::update() {
         this->lastPhaseCycle = this->gameboy->cpu->getCycle();
 
         while(this->gameboy->cpu->getCycle() >= this->lastScanlineCycle + (modeCycles[this->gameboy->mmu->readIO(STAT) & 3] << this->halfSpeed)) {
-            this->updateScanline();
-
             u8 stat = this->gameboy->mmu->readIO(STAT);
             u8 ly = this->gameboy->mmu->readIO(LY);
             u8 hdma5 = this->gameboy->mmu->readIO(HDMA5);
@@ -388,28 +413,18 @@ void PPU::update() {
 
                         u8 interrupts = this->gameboy->mmu->readIO(IF);
                         interrupts |= INT_VBLANK;
-                        if(stat & 0x30) {
-                            interrupts |= INT_LCD;
-                        }
-
                         this->gameboy->mmu->writeIO(IF, interrupts);
                         this->gameboy->ranFrame = true;
                     } else {
                         this->gameboy->mmu->writeIO(STAT, (u8) ((stat & ~3) | LCD_ACCESS_OAM));
-
-                        if(stat & 0x20) {
-                            this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) | INT_LCD));
-                        }
                     }
 
+                    this->updateStatSignal();
                     break;
                 case LCD_VBLANK:
                     if(ly == 0) {
                         this->gameboy->mmu->writeIO(STAT, (u8) ((stat & ~3) | LCD_ACCESS_OAM));
-
-                        if(stat & 0x20) {
-                            this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) | INT_LCD));
-                        }
+                        this->updateStatSignal();
                     } else {
                         ly++;
                         this->gameboy->mmu->writeIO(LY, ly);
@@ -431,6 +446,7 @@ void PPU::update() {
                     this->updateLineSprites();
 
                     this->gameboy->mmu->writeIO(STAT, (u8) ((stat & ~3) | LCD_ACCESS_OAM_VRAM));
+                    this->updateStatSignal();
                     break;
                 case LCD_ACCESS_OAM_VRAM:
                     if(!this->gameboy->settings.perPixelRendering && this->gameboy->settings.drawEnabled) {
@@ -438,10 +454,7 @@ void PPU::update() {
                     }
 
                     this->gameboy->mmu->writeIO(STAT, (u8) ((stat & ~3) | LCD_HBLANK));
-
-                    if(stat & 0x8) {
-                        this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) | INT_LCD));
-                    }
+                    this->updateStatSignal();
 
                     if(this->gameboy->gbMode == MODE_CGB && (hdma5 & 0x80) == 0) {
                         u8 bank = (u8) (this->gameboy->gbMode == MODE_CGB && (this->gameboy->mmu->readIO(VBK) & 0x1) != 0);
@@ -601,7 +614,7 @@ inline void PPU::updateLineSprites() {
     }
 }
 
-inline void PPU::updateScanline() {
+__attribute__((always_inline)) inline void PPU::updateScanline() {
     u8 mode = (u8) (this->gameboy->mmu->readIO(STAT) & 3);
     u8 ly = this->gameboy->mmu->readIO(LY);
 

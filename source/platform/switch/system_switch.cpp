@@ -52,6 +52,10 @@ void systemRequestExit() {
     requestedExit = true;
 }
 
+bool systemCanAccessSD() {
+    return true;
+}
+
 const std::string systemIniPath() {
     return "gameyob.ini";
 }

@@ -6,6 +6,7 @@ bool systemInit(int argc, char* argv[]);
 void systemExit();
 bool systemIsRunning();
 void systemRequestExit();
+bool systemCanAccessSD();
 
 const std::string systemIniPath();
 const std::string systemDefaultBorderPath();

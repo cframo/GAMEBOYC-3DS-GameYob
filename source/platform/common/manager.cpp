@@ -658,7 +658,7 @@ void mgrPowerOn(const char* romFile) {
 void mgrPowerOff(bool save) {
     if(gameboy != NULL) {
         if(gameboy->cartridge != NULL) {
-            if(gameboy->isPoweredOn() && save) {
+            if(gameboy->isPoweredOn() && save && systemCanAccessSD()) {
                 mgrWriteSave();
             }
 
@@ -671,10 +671,12 @@ void mgrPowerOff(bool save) {
 
     romName = "";
 
-    mgrRefreshBorder();
+    if(systemIsRunning()) {
+        mgrRefreshBorder();
 
-    memset(gfxGetScreenBuffer(), 0, gfxGetScreenPitch() * 224 * sizeof(u32));
-    gfxDrawScreen();
+        memset(gfxGetScreenBuffer(), 0, gfxGetScreenPitch() * 224 * sizeof(u32));
+        gfxDrawScreen();
+    }
 }
 
 void mgrSelectRom() {
@@ -702,6 +704,10 @@ void mgrSelectRom() {
 }
 
 void mgrWriteSave() {
+    if(!systemCanAccessSD()) {
+        return;
+    }
+
     if(gameboy == NULL || gameboy->cartridge == NULL) {
         return;
     }

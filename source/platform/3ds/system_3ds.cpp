@@ -23,11 +23,30 @@
 #include "printer.h"
 
 static bool requestedExit;
+static aptHookCookie aptCookie;
+static bool aptActive = true;
 
 static u32* iruBuffer;
 static u32* socBuffer;
 
 static int numPrinted;
+
+static void onAptHook(APT_HookType hook, void* param) {
+    switch(hook) {
+        case APTHOOK_ONSUSPEND:
+        case APTHOOK_ONSLEEP:
+            break;
+        case APTHOOK_ONRESTORE:
+        case APTHOOK_ONWAKEUP:
+            break;
+        case APTHOOK_ONEXIT:
+            aptActive = false;
+            requestedExit = true;
+            break;
+        default:
+            break;
+    }
+}
 
 bool systemInit(int argc, char* argv[]) {
     if(!gfxInit()) {
@@ -37,6 +56,9 @@ bool systemInit(int argc, char* argv[]) {
     audioInit();
     uiInit();
     inputInit();
+
+    aptActive = true;
+    aptHook(&aptCookie, onAptHook, nullptr);
 
     iruBuffer = (u32*) memalign(0x1000, 0x1000);
     if(iruBuffer != NULL) {
@@ -62,6 +84,8 @@ bool systemInit(int argc, char* argv[]) {
 }
 
 void systemExit() {
+    aptUnhook(&aptCookie);
+
     if(socBuffer != nullptr) {
         socExit();
         free(socBuffer);
@@ -81,11 +105,24 @@ void systemExit() {
 }
 
 bool systemIsRunning() {
-    return !requestedExit && aptMainLoop();
+    if(requestedExit) {
+        return false;
+    }
+
+    if(!aptMainLoop()) {
+        aptActive = false;
+        return false;
+    }
+
+    return true;
 }
 
 void systemRequestExit() {
     requestedExit = true;
+}
+
+bool systemCanAccessSD() {
+    return aptActive;
 }
 
 const std::string systemIniPath() {
