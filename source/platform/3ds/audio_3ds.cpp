@@ -8,8 +8,8 @@
 #include "platform/common/manager.h"
 #include "platform/audio.h"
 
-#define BUFFER_SAMPLES 2048
-#define NUM_BUFFERS 4
+#define BUFFER_SAMPLES 768
+#define NUM_BUFFERS 3
 
 static bool ndspInitialized = false;
 static bool initialized = false;
@@ -19,6 +19,7 @@ static u32* audioBuffer;
 
 static u32 currBuffer;
 static u32 currPos;
+static float currentRate = 44140.0f;
 
 void audioInit() {
     if(R_FAILED(ndspInit())) {
@@ -38,10 +39,11 @@ void audioInit() {
 
     currBuffer = 0;
     currPos = 0;
+    currentRate = 44140.0f;
 
     ndspSetOutputMode(NDSP_OUTPUT_STEREO);
     ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
-    ndspChnSetRate(0, audioGetSampleRate());
+    ndspChnSetRate(0, currentRate);
     ndspChnSetFormat(0, NDSP_FORMAT_STEREO_PCM16);
 
     float mix[12] = {1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
@@ -51,8 +53,15 @@ void audioInit() {
     for(int i = 0; i < NUM_BUFFERS; i++) {
         waveBuf[i].data_vaddr = &audioBuffer[BUFFER_SAMPLES * i];
         waveBuf[i].nsamples = BUFFER_SAMPLES;
-        ndspChnWaveBufAdd(0, &waveBuf[i]);
+        waveBuf[i].status = NDSP_WBUF_FREE;
     }
+
+    // Pre-encolar unicamente 1 bufer de silencio como colchon inicial
+    DSP_FlushDataCache(waveBuf[0].data_vaddr, BUFFER_SAMPLES * sizeof(u32));
+    ndspChnWaveBufAdd(0, &waveBuf[0]);
+
+    currBuffer = 1;
+    currPos = 0;
 
     initialized = true;
 }
@@ -88,6 +97,9 @@ void audioClear() {
     for(int i = 0; i < NUM_BUFFERS; i++) {
         waveBuf[i].status = NDSP_WBUF_FREE;
     }
+
+    currBuffer = 0;
+    currPos = 0;
 }
 
 void audioPlay(u32* buffer, long samples) {
@@ -102,10 +114,10 @@ void audioPlay(u32* buffer, long samples) {
         if(buf->status != NDSP_WBUF_DONE && buf->status != NDSP_WBUF_FREE) {
             if(mgrGetFastForward()) {
                 audioClear();
-                ndspChnWaveBufAdd(0, buf->next);
+                buf = &waveBuf[currBuffer];
             } else {
-                usleep(10);
-                continue;
+                // Buffer saturado: no bloquear con usleep para proteger el ritmo de VSync
+                return;
             }
         }
 
@@ -121,6 +133,27 @@ void audioPlay(u32* buffer, long samples) {
 
         if(currPos >= buf->nsamples) {
             DSP_FlushDataCache(buf->data_vaddr, buf->nsamples * sizeof(u32));
+
+            // Dynamic Rate Control (DRC): inspecciona bufers encolados/activos antes de despachar
+            int activeBuffers = 0;
+            for(int i = 0; i < NUM_BUFFERS; i++) {
+                if(waveBuf[i].status == NDSP_WBUF_PLAYING || waveBuf[i].status == NDSP_WBUF_QUEUED) {
+                    activeBuffers++;
+                }
+            }
+
+            float targetRate = 44140.0f;
+            if(activeBuffers >= 2) {
+                targetRate = 44180.0f;
+            } else if(activeBuffers <= 0) {
+                targetRate = 44100.0f;
+            }
+
+            if(targetRate != currentRate) {
+                currentRate = targetRate;
+                ndspChnSetRate(0, currentRate);
+            }
+
             ndspChnWaveBufAdd(0, buf);
 
             currPos -= buf->nsamples;
