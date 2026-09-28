@@ -963,6 +963,9 @@ void mgrRun() {
 
         if(menuOn) {
             updateMenu();
+            if(!systemIsRunning()) {
+                return;
+            }
         } else if(gameboy->isPoweredOn()) {
             u8 buttonsPressed = 0xFF;
 

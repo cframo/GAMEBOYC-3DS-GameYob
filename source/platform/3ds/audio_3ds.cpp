@@ -11,6 +11,7 @@
 #define BUFFER_SAMPLES 2048
 #define NUM_BUFFERS 4
 
+static bool ndspInitialized = false;
 static bool initialized = false;
 
 static ndspWaveBuf waveBuf[NUM_BUFFERS];
@@ -24,9 +25,11 @@ void audioInit() {
         return;
     }
 
+    ndspInitialized = true;
+
     u32 bufSize = BUFFER_SAMPLES * NUM_BUFFERS * sizeof(u32);
     audioBuffer = (u32*) linearAlloc(bufSize);
-    if(audioBuffer == NULL) {
+    if(audioBuffer == nullptr) {
         audioCleanup();
         return;
     }
@@ -55,13 +58,19 @@ void audioInit() {
 }
 
 void audioCleanup() {
+    if(!ndspInitialized) {
+        return;
+    }
+
     initialized = false;
 
+    ndspChnReset(0);
     ndspExit();
+    ndspInitialized = false;
 
-    if(audioBuffer != NULL) {
+    if(audioBuffer != nullptr) {
         linearFree(audioBuffer);
-        audioBuffer = NULL;
+        audioBuffer = nullptr;
     }
 }
 

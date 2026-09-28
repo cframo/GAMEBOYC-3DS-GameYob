@@ -62,16 +62,16 @@ bool systemInit(int argc, char* argv[]) {
 }
 
 void systemExit() {
-    if(socBuffer != NULL) {
+    if(socBuffer != nullptr) {
         socExit();
         free(socBuffer);
-        socBuffer = NULL;
+        socBuffer = nullptr;
     }
 
-    if(iruBuffer != NULL) {
+    if(iruBuffer != nullptr) {
         iruExit();
         free(iruBuffer);
-        iruBuffer = NULL;
+        iruBuffer = nullptr;
     }
 
     inputCleanup();

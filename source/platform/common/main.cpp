@@ -12,7 +12,11 @@ int main(int argc, char* argv[]) {
     setMenuDefaults();
     configLoad();
 
-    while(systemIsRunning()) {
+    while(true) {
+        if(!systemIsRunning()) {
+            break;
+        }
+
         mgrRun();
     }
 

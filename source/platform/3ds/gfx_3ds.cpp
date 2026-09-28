@@ -40,8 +40,11 @@ static C3D_Tex borderTexture;
 static u32* screenBuffer;
 static u32* scale2xBuffer;
 
+static bool gfxInitialized = false;
+
 bool gfxInit() {
     gfxInitDefault();
+    gfxInitialized = true;
 
     if(!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) {
         gfxCleanup();
@@ -130,14 +133,14 @@ bool gfxInit() {
 }
 
 void gfxCleanup() {
-    if(scale2xBuffer != NULL) {
+    if(scale2xBuffer != nullptr) {
         linearFree(scale2xBuffer);
-        scale2xBuffer = NULL;
+        scale2xBuffer = nullptr;
     }
 
-    if(screenBuffer != NULL) {
+    if(screenBuffer != nullptr) {
         linearFree(screenBuffer);
-        screenBuffer = NULL;
+        screenBuffer = nullptr;
     }
 
     if(borderInit) {
@@ -155,19 +158,19 @@ void gfxCleanup() {
         shaderInitialized = false;
     }
 
-    if(dvlb != NULL) {
+    if(dvlb != nullptr) {
         DVLB_Free(dvlb);
-        dvlb = NULL;
+        dvlb = nullptr;
     }
 
-    if(targetTop != NULL) {
+    if(targetTop != nullptr) {
         C3D_RenderTargetDelete(targetTop);
-        targetTop = NULL;
+        targetTop = nullptr;
     }
 
-    if(targetBottom != NULL) {
+    if(targetBottom != nullptr) {
         C3D_RenderTargetDelete(targetBottom);
-        targetBottom = NULL;
+        targetBottom = nullptr;
     }
 
     if(c3dInitialized) {
@@ -175,7 +178,10 @@ void gfxCleanup() {
         c3dInitialized = false;
     }
 
-    gfxExit();
+    if(gfxInitialized) {
+        gfxExit();
+        gfxInitialized = false;
+    }
 }
 
 void gfxLoadBorder(u8* imgData, int imgWidth, int imgHeight) {
