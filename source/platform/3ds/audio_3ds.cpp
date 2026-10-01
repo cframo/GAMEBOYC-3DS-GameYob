@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <string.h>
 
 #include <3ds.h>
@@ -29,17 +30,29 @@ static ndspWaveBuf waveBuf[NDSP_NUM_BUFFERS];
 
 static s16 lastSampleL = 0;
 static s16 lastSampleR = 0;
-static const float PREAMP_GAIN = 1.35f;
 
-static inline s16 amplifySample(s16 sample, float gain) {
-    int val = (int) (sample * gain);
-    if(val > 32767) {
-        return 32767;
+static const float PREAMP_GAIN = 1.60f; // +4.1 dB (nivel de Virtual Console)
+static const float HPF_ALPHA = 0.9777f;  // Corte fc ≈ 160 Hz a fs = 44.1 kHz
+static const int THRESHOLD = 24576;      // 75% de escala (32767)
+static const int MAX_SAMPLE = 32767;
+
+static float hpfPrevInL = 0.0f, hpfPrevOutL = 0.0f;
+static float hpfPrevInR = 0.0f, hpfPrevOutR = 0.0f;
+
+static inline s16 softLimit(float sample) {
+    float absVal = std::fabs(sample);
+    if(absVal <= (float) THRESHOLD) {
+        return (s16) sample;
     }
-    if(val < -32768) {
-        return -32768;
+    // Compresión asintótica suave sobre el 25% superior:
+    float excess = absVal - (float) THRESHOLD;
+    float maxExcess = (float) (MAX_SAMPLE - THRESHOLD); // 8191.0f
+    float compressedExcess = excess / (1.0f + (excess / maxExcess));
+    float finalVal = (float) THRESHOLD + compressedExcess;
+    if(finalVal > (float) MAX_SAMPLE) {
+        finalVal = (float) MAX_SAMPLE;
     }
-    return (s16) val;
+    return (sample < 0.0f) ? (s16) (-finalVal) : (s16) finalVal;
 }
 
 static void refillWaveBuf(ndspWaveBuf* buf) {
@@ -56,11 +69,21 @@ static void refillWaveBuf(ndspWaveBuf* buf) {
 
     for(size_t i = 0; i < toCopy; i++) {
         u32 raw = ringBuffer[(tail + i) & RING_MASK];
-        s16 sampleL = (s16) (raw & 0xFFFF);
-        s16 sampleR = (s16) (raw >> 16);
+        s16 rawL = (s16) (raw & 0xFFFF);
+        s16 rawR = (s16) (raw >> 16);
 
-        sampleL = amplifySample(sampleL, PREAMP_GAIN);
-        sampleR = amplifySample(sampleR, PREAMP_GAIN);
+        float inL = (float) rawL;
+        float outL = HPF_ALPHA * (hpfPrevOutL + inL - hpfPrevInL);
+        hpfPrevInL = inL;
+        hpfPrevOutL = outL;
+
+        float inR = (float) rawR;
+        float outR = HPF_ALPHA * (hpfPrevOutR + inR - hpfPrevInR);
+        hpfPrevInR = inR;
+        hpfPrevOutR = outR;
+
+        s16 sampleL = softLimit(outL * PREAMP_GAIN);
+        s16 sampleR = softLimit(outR * PREAMP_GAIN);
 
         dst[i] = (u32) ((u16) sampleL | ((u32) (u16) sampleR << 16));
     }
@@ -119,6 +142,10 @@ void audioInit() {
     ringTail.store(0, std::memory_order_relaxed);
     lastSampleL = 0;
     lastSampleR = 0;
+    hpfPrevInL = 0.0f;
+    hpfPrevOutL = 0.0f;
+    hpfPrevInR = 0.0f;
+    hpfPrevOutR = 0.0f;
 
     ndspSetOutputMode(NDSP_OUTPUT_STEREO);
     ndspChnSetInterp(0, NDSP_INTERP_LINEAR);
@@ -179,6 +206,10 @@ void audioClear() {
     ringTail.store(ringHead.load(std::memory_order_relaxed), std::memory_order_release);
     lastSampleL = 0;
     lastSampleR = 0;
+    hpfPrevInL = 0.0f;
+    hpfPrevOutL = 0.0f;
+    hpfPrevInR = 0.0f;
+    hpfPrevOutR = 0.0f;
 }
 
 void audioPlay(u32* buffer, long samples) {
