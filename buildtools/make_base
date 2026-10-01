@@ -9,14 +9,18 @@ AS      := $(PREFIX)as
 LD      := $(PREFIX)g++
 OBJCOPY := $(PREFIX)objcopy
 STRIP   := $(PREFIX)strip
+PICASSO ?= $(DEVKITPRO)/tools/bin/picasso
 
 # Arquitectura CTR (ARM11 MPCore de Nintendo 3DS)
 ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mfpu=vfp -mtp=soft
 
+TARGET_BUILD := $(BUILD_DIR)/$(TARGET)
+
 # Inclusión de cabeceras y librerías
 INCLUDES := $(foreach dir,$(INCLUDE_DIRS),-I$(dir)) \
             $(foreach dir,$(SOURCE_DIRS),-I$(dir)) \
-            $(foreach dir,$(LIBRARY_DIRS),-I$(dir)/include)
+            $(foreach dir,$(LIBRARY_DIRS),-I$(dir)/include) \
+            -I$(TARGET_BUILD)
 
 LIBPATHS := $(foreach dir,$(LIBRARY_DIRS),-L$(dir)/lib)
 LIBS     := $(foreach lib,$(LIBRARIES),-l$(lib)) -lm
@@ -58,7 +62,11 @@ C_FILES   := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f -name "*.c" 2>/
 CPP_FILES := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f -name "*.cpp" 2>/dev/null)
 S_FILES   := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f \( -name "*.s" -o -name "*.S" \) 2>/dev/null)
 
-TARGET_BUILD := $(BUILD_DIR)/$(TARGET)
+# Shaders PICA200 (.v.pica)
+PICA_FILES    := $(shell find $(SOURCE_DIRS) $(EXCLUDE_DIRS) -type f -name "*.v.pica" 2>/dev/null)
+SHBIN_HEADERS := $(patsubst source/platform/3ds/%.v.pica,include/platform/3ds/%_shbin.h,$(PICA_FILES))
+SHBINS        := $(patsubst source/platform/3ds/%.v.pica,$(TARGET_BUILD)/%.shbin,$(PICA_FILES))
+
 OBJS := $(patsubst %,$(TARGET_BUILD)/%.o,$(C_FILES) $(CPP_FILES) $(S_FILES))
 
 ELF  := $(OUTPUT_DIR)/$(NAME).elf
@@ -83,6 +91,15 @@ $(ELF): $(OBJS)
 	@mkdir -p $(OUTPUT_DIR)
 	@echo "--- Enlazando ELF: $@ ---"
 	$(LD) $(ARCH) -specs=3dsx.specs -o $@ $(OBJS) $(LIBPATHS) $(LIBS)
+
+$(OBJS): $(SHBIN_HEADERS) $(SHBINS)
+
+$(TARGET_BUILD)/%.shbin $(TARGET_BUILD)/%_shbin.h include/platform/3ds/%_shbin.h: source/platform/3ds/%.v.pica
+	@mkdir -p $(TARGET_BUILD) include/platform/3ds
+	@echo "PICASSO $<"
+	@$(PICASSO) -o $(TARGET_BUILD)/$*.shbin -h include/platform/3ds/$*_shbin.h $<
+	@python3 buildtools/shbin2h.py $(TARGET_BUILD)/$*.shbin $*_shbin include/platform/3ds/$*_shbin.h
+	@cp include/platform/3ds/$*_shbin.h $(TARGET_BUILD)/$*_shbin.h
 
 $(TARGET_BUILD)/%.c.o: %.c
 	@mkdir -p $(dir $@)
