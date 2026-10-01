@@ -39,7 +39,8 @@ static u16 gpuBorderHeight;
 static C3D_Tex borderTexture;
 
 static u32* screenBuffer;
-static u32* scale2xBuffer;
+static bool lcdGridInit;
+static C3D_Tex lcdGridTexture;
 
 static bool gfxInitialized = false;
 
@@ -126,17 +127,40 @@ bool gfxInit() {
     screenBuffer = (u32*) linearAlloc(256 * 256 * sizeof(u32));
     memset(screenBuffer, 0, 256 * 256 * sizeof(u32));
 
-    // Allocate and clear the scale2x buffer.
-    scale2xBuffer = (u32*) linearAlloc(512 * 512 * sizeof(u32));
-    memset(scale2xBuffer, 0, 512 * 512 * sizeof(u32));
+    // Create 8x8 dot-matrix LCD cell texture
+    lcdGridInit = false;
+    if(C3D_TexInit(&lcdGridTexture, 8, 8, GPU_RGBA8)) {
+        lcdGridInit = true;
+        u32* temp = (u32*) linearAlloc(8 * 8 * sizeof(u32));
+        if(temp != nullptr) {
+            for(int y = 0; y < 8; y++) {
+                for(int x = 0; x < 8; x++) {
+                    if(x == 7 || y == 7) {
+                        temp[y * 8 + x] = (u32) (0xC0 | (0xC0 << 8) | (0xC0 << 16) | (0xFF << 24));
+                    } else {
+                        temp[y * 8 + x] = 0xFFFFFFFF;
+                    }
+                }
+            }
+            GSPGPU_FlushDataCache(temp, 8 * 8 * sizeof(u32));
+            C3D_SyncDisplayTransfer(temp, (u32) GX_BUFFER_DIM(8, 8), (u32*) lcdGridTexture.data, (u32) GX_BUFFER_DIM(8, 8),
+                GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+                GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+            linearFree(temp);
+            GSPGPU_InvalidateDataCache(lcdGridTexture.data, lcdGridTexture.size);
+        }
+        C3D_TexSetWrap(&lcdGridTexture, GPU_REPEAT, GPU_REPEAT);
+        C3D_TexSetFilter(&lcdGridTexture, GPU_NEAREST, GPU_NEAREST);
+    }
 
     return true;
 }
 
 void gfxCleanup() {
-    if(scale2xBuffer != nullptr) {
-        linearFree(scale2xBuffer);
-        scale2xBuffer = nullptr;
+    if(lcdGridInit) {
+        C3D_TexDelete(&lcdGridTexture);
+        lcdGridInit = false;
     }
 
     if(screenBuffer != nullptr) {
@@ -298,131 +322,14 @@ void gfxTakeScreenshot() {
     delete[] image;
 }
 
-#define SEEK_PIXEL(buf, x, y, pitch) ((buf) + ((((y) * (pitch)) + (x))))
-#define DO_SCALE2X() if(Bp != Hp && Dp != Fp) {                    \
-                         if(Dp == Bp) *(E0) = Dp;                  \
-                         else *(E0) = Ep;                          \
-                         if(Bp == Fp) *((E0) + 1) = Fp;            \
-                         else *((E0) + 1) = Ep;                    \
-                         if(Dp == Hp) *((E0) + dstPitch) = Dp;     \
-                         else *((E0) + dstPitch) = Ep;             \
-                         if(Hp == Fp) *((E0) + dstPitch + 1) = Fp; \
-                         else *((E0) + dstPitch + 1) = Ep;         \
-                     } else {                                      \
-                         *(E0) = Ep;                               \
-                         *((E0) + 1) = Ep;                         \
-                         *((E0) + dstPitch) = Ep;                  \
-                         *((E0) + dstPitch + 1) = Ep;              \
-                     }
-
-void gfxScale2xRGBA8888(u32* src, u32 srcPitch, u32* dst, u32 dstPitch, int width, int height) {
-    u32* E, *E0;
-    u32 Ep, Bp, Dp, Fp, Hp;
-
-    // Top line and top corners
-    E = SEEK_PIXEL(src, 0, 0, srcPitch);
-    E0 = SEEK_PIXEL(dst, 0, 0, dstPitch);
-    Ep = E[0];
-    Bp = Ep;
-    Dp = Ep;
-    Fp = E[1];
-    Hp = E[srcPitch];
-    DO_SCALE2X();
-
-    for(int x = 1; x < width - 1; x++) {
-        E += 1;
-        E0 += 2;
-        Dp = Ep;
-        Ep = Fp;
-        Fp = E[1];
-        Bp = Ep;
-        Hp = E[srcPitch];
-        DO_SCALE2X();
-    }
-
-    E += 1;
-    E0 += 2;
-    Dp = Ep;
-    Ep = Fp;
-    Bp = Ep;
-    Hp = E[srcPitch];
-    DO_SCALE2X();
-
-    // Middle Rows and sides
-    for(int y = 1; y < height - 1; y++) {
-        E = SEEK_PIXEL(src, 0, y, srcPitch);
-        E0 = SEEK_PIXEL(dst, 0, y * 2, dstPitch);
-        Ep = E[0];
-        Bp = E[-srcPitch];
-        Dp = Ep;
-        Fp = E[1];
-        Hp = E[srcPitch];
-        DO_SCALE2X();
-
-        for(int x = 1; x < width - 1; x++) {
-            E += 1;
-            E0 += 2;
-            Dp = Ep;
-            Ep = Fp;
-            Fp = E[1];
-            Bp = E[-srcPitch];
-            Hp = E[srcPitch];
-            DO_SCALE2X();
-        }
-
-        E += 1;
-        E0 += 2;
-        Dp = Ep;
-        Ep = Fp;
-        Bp = E[-srcPitch];
-        Hp = E[srcPitch];
-        DO_SCALE2X();
-    }
-
-    // Bottom Row and Bottom Corners
-    E = SEEK_PIXEL(src, 0, height - 1, srcPitch);
-    E0 = SEEK_PIXEL(dst, 0, (height - 1) * 2, dstPitch);
-    Ep = E[0];
-    Bp = E[-srcPitch];
-    Dp = Ep;
-    Fp = E[1];
-    Hp = Ep;
-    DO_SCALE2X();
-
-    for(int x = 1; x < width - 1; x++) {
-        E += 1;
-        E0 += 2;
-        Dp = Ep;
-        Ep = Fp;
-        Fp = E[1];
-        Bp = E[-srcPitch];
-        Hp = Ep;
-        DO_SCALE2X();
-    }
-
-    E += 1;
-    E0 += 2;
-    Dp = Ep;
-    Ep = Fp;
-    Bp = E[-srcPitch];
-    Hp = Ep;
-    DO_SCALE2X();
-}
-
 void gfxDrawScreen() {
-    int screenTexSize = 256;
+    const int screenTexSize = 256;
     u32* transferBuffer = screenBuffer;
+    bool lcdFilterActive = (scaleFilter == 2 && lcdGridInit);
     GPU_TEXTURE_FILTER_PARAM filter = GPU_NEAREST;
 
-    if(scaleMode != 0 && scaleFilter != 0) {
+    if(scaleMode != 0 && scaleFilter == 1) {
         filter = GPU_LINEAR;
-
-        if(scaleFilter == 2) {
-            screenTexSize = 512;
-            transferBuffer = scale2xBuffer;
-
-            gfxScale2xRGBA8888(screenBuffer, 256, scale2xBuffer, 512, 256, 224);
-        }
     }
 
     if(!screenInit || screenTexture.width != screenTexSize || screenTexture.height != screenTexSize) {
@@ -533,6 +440,21 @@ void gfxDrawScreen() {
 
         C3D_TexBind(0, &screenTexture);
 
+        C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+        C3D_TexEnvInit(env0);
+        C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC) 0, (GPU_TEVSRC) 0);
+        C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+
+        if(lcdFilterActive) {
+            C3D_TexBind(1, &lcdGridTexture);
+            C3D_TexEnv* env1 = C3D_GetTexEnv(1);
+            C3D_TexEnvInit(env1);
+            C3D_TexEnvSrc(env1, C3D_Both, GPU_PREVIOUS, GPU_TEXTURE1, (GPU_TEVSRC) 0);
+            C3D_TexEnvFunc(env1, C3D_Both, GPU_MODULATE);
+        } else {
+            C3D_TexEnvInit(C3D_GetTexEnv(1));
+        }
+
         C3D_ImmDrawBegin(GPU_TRIANGLES);
 
         C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f);
@@ -558,6 +480,9 @@ void gfxDrawScreen() {
 
     // Draw the border.
     if(borderInit && customBordersEnabled && scaleMode != 4) {
+        if(lcdFilterActive) {
+            C3D_TexEnvInit(C3D_GetTexEnv(1));
+        }
         // Calculate VBO points.
         int scaledBorderWidth = borderWidth;
         int scaledBorderHeight = borderHeight;
