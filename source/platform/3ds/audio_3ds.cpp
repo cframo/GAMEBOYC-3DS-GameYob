@@ -31,8 +31,8 @@ static ndspWaveBuf waveBuf[NDSP_NUM_BUFFERS];
 static s16 lastSampleL = 0;
 static s16 lastSampleR = 0;
 
-static const float PREAMP_GAIN = 1.60f; // +4.1 dB (nivel de Virtual Console)
-static const float HPF_ALPHA = 0.9777f;  // Corte fc ≈ 160 Hz a fs = 44.1 kHz
+static const float PREAMP_GAIN = 1.45f; // Equilibrio óptimo de pegada sin saturar
+static const float HPF_ALPHA = 0.9745f;  // Corte fc ≈ 180 Hz a fs = 44.1 kHz
 static const int THRESHOLD = 24576;      // 75% de escala (32767)
 static const int MAX_SAMPLE = 32767;
 
