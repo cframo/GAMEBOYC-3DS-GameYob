@@ -141,13 +141,13 @@ bool gfxInit() {
                              ((y & 4) << 2) | ((x & 4) << 3);
 
                 if(x == 7 && y == 7) {
-                    // Intersección de esquinas: atenuación media (~72% de brillo)
-                    dst[morton] = 0xFFB8B8B8;
+                    // Esquinas: bisel tenue (~81% de brillo)
+                    dst[morton] = 0xFFD0D0D0;
                 } else if(x == 7 || y == 7) {
-                    // Frontera perimetral de 1 solo texel: atenuación muy sutil (~84% de brillo)
-                    dst[morton] = 0xFFD6D6D6;
+                    // Borde perimetral de 1 texel: sombra de fondo (~92% de brillo)
+                    dst[morton] = 0xFFEAEAEA;
                 } else {
-                    // Núcleo del píxel: 100% blanco puro reflectivo
+                    // Núcleo: blanco puro reflectivo (100%)
                     dst[morton] = 0xFFFFFFFF;
                 }
             }
