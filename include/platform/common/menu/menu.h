@@ -38,6 +38,7 @@ extern int stateNum;
 extern int gameScreen;
 extern int scaleMode;
 extern int scaleFilter;
+extern int lcdGrid;
 extern bool fpsOutput;
 extern bool timeOutput;
 extern int fastForwardFrameSkip;

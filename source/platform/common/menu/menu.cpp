@@ -37,6 +37,7 @@ int gbColorizeMode = 0;
 
 int scaleMode = 0;
 int scaleFilter = 0;
+int lcdGrid = 0;
 
 void (*subMenuUpdateFunc)();
 
@@ -225,6 +226,10 @@ void setScaleFilterFunc(int value) {
     scaleFilter = value;
 }
 
+void setLcdGridFunc(int value) {
+    lcdGrid = value;
+}
+
 void setBorderScaleModeFunc(int value) {
     borderScaleMode = value;
 
@@ -381,11 +386,12 @@ SubMenu menuList[] = {
         },
         {
                 "Display",
-                10,
+                11,
                 {
                         {"Game Screen", setScreenFunc, 2, {"Top", "Bottom"}, 0},
                         {"Scaling", setScaleModeFunc, 5, {"Off", "125%", "150%", "Aspect", "Full"}, 0},
-                        {"Scale Filter", setScaleFilterFunc, 3, {"Nearest", "Linear", "Scale2x"}, 1},
+                        {"Scale Filter", setScaleFilterFunc, 2, {"Nearest", "Linear"}, 0},
+                        {"LCD Grid", setLcdGridFunc, 2, {"Off", "On"}, 0},
                         {"FF Frame Skip", setFastForwardFrameSkipFunc, 4, {"0", "1", "2", "3"}, 3},
                         {"Per Pixel Rendering", setPerPixelRenderingFunc, 2, {"Off", "On"}, 0},
                         {"Emulate Blur", setEmulateBlurFunc, 2, {"Off", "On"}, 0},

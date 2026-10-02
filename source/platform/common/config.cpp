@@ -150,6 +150,9 @@ void configLoadOptions(INIReader &reader) {
         for(int j = 0; j < menuList[i].numOptions; j++) {
             if(menuList[i].options[j].numValues != 0) {
                 int value = (int) reader.GetInteger("options", menuList[i].options[j].name, -1);
+                if(value == -1 && strcmp(menuList[i].options[j].name, "LCD Grid") == 0) {
+                    value = (int) reader.GetInteger("options", "lcdGrid", -1);
+                }
                 if(value != -1) {
                     menuList[i].options[j].selection = value;
                     menuList[i].options[j].function(value);
