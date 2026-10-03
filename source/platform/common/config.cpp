@@ -153,6 +153,9 @@ void configLoadOptions(INIReader &reader) {
                 if(value == -1 && strcmp(menuList[i].options[j].name, "LCD Grid") == 0) {
                     value = (int) reader.GetInteger("options", "lcdGrid", -1);
                 }
+                if(value == -1 && strcmp(menuList[i].options[j].name, "CGB Colors") == 0) {
+                    value = (int) reader.GetInteger("options", "cgbColors", -1);
+                }
                 if(value != -1) {
                     menuList[i].options[j].selection = value;
                     menuList[i].options[j].function(value);
@@ -169,6 +172,9 @@ void configSaveOptions(std::ofstream &stream) {
         for(int j = 0; j < menuList[i].numOptions; j++) {
             if(menuList[i].options[j].numValues != 0) {
                 stream << menuList[i].options[j].name << "=" << menuList[i].options[j].selection << "\n";
+                if(strcmp(menuList[i].options[j].name, "CGB Colors") == 0) {
+                    stream << "cgbColors=" << menuList[i].options[j].selection << "\n";
+                }
             }
         }
     }

@@ -1,3 +1,4 @@
+#include <math.h>
 #include <string.h>
 
 #include "cpu.h"
@@ -69,9 +70,50 @@ static const u8 BitReverseTable256[] = {
         0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
 };
 
+extern int cgbColors;
+
+static u32 cgbColorLut[32768];
+static bool cgbLutInitialized = false;
+
+static inline float clampColor(float v, float minVal, float maxVal) {
+    if(v < minVal) {
+        return minVal;
+    }
+    if(v > maxVal) {
+        return maxVal;
+    }
+    return v;
+}
+
+void PPU::initCgbColorLut() {
+    if(!cgbLutInitialized) {
+        for(u32 rgb555 = 0; rgb555 < 32768; rgb555++) {
+            u8 r5 = (u8) (rgb555 & 0x1F);
+            u8 g5 = (u8) ((rgb555 >> 5) & 0x1F);
+            u8 b5 = (u8) ((rgb555 >> 10) & 0x1F);
+
+            float rLin = powf(r5 / 31.0f, 2.2f);
+            float gLin = powf(g5 / 31.0f, 2.2f);
+            float bLin = powf(b5 / 31.0f, 2.2f);
+
+            float rOut = 0.82f * rLin + 0.12f * gLin + 0.06f * bLin;
+            float gOut = 0.00f * rLin + 0.70f * gLin + 0.30f * bLin;
+            float bOut = 0.12f * rLin + 0.08f * gLin + 0.80f * bLin;
+
+            u8 r8 = (u8) clampColor(powf(rOut, 1.0f / 2.2f) * 255.0f, 0.0f, 255.0f);
+            u8 g8 = (u8) clampColor(powf(gOut, 1.0f / 2.2f) * 255.0f, 0.0f, 255.0f);
+            u8 b8 = (u8) clampColor(powf(bOut, 1.0f / 2.2f) * 255.0f, 0.0f, 255.0f);
+
+            cgbColorLut[rgb555] = ((u32) r8 << 24) | ((u32) g8 << 16) | ((u32) b8 << 8) | 0xFF;
+        }
+
+        cgbLutInitialized = true;
+    }
+}
 
 PPU::PPU(Gameboy* gb) {
     this->gameboy = gb;
+    PPU::initCgbColorLut();
 }
 
 void PPU::reset() {
@@ -229,7 +271,9 @@ void PPU::reset() {
             }
 
             this->rawBgPalette[selected] = val;
-            this->bgPalette[selected >> 1] = RGB555ToRGB8888(rgb555);
+            u16 rgb555_masked = rgb555 & 0x7FFF;
+            u32 colorFinal = (cgbColors == 1) ? cgbColorLut[rgb555_masked] : RGB555ToRGB8888(rgb555);
+            this->bgPalette[selected >> 1] = colorFinal;
 
             if(bcps & 0x80) {
                 this->gameboy->mmu->writeIO(BCPS, (u8) (((bcps & 0x3F) + 1) | (bcps & 0x80) | 0x40));
@@ -256,7 +300,9 @@ void PPU::reset() {
             }
 
             this->rawSprPalette[selected] = val;
-            this->sprPalette[selected >> 1] = RGB555ToRGB8888(rgb555);
+            u16 rgb555_masked = rgb555 & 0x7FFF;
+            u32 colorFinal = (cgbColors == 1) ? cgbColorLut[rgb555_masked] : RGB555ToRGB8888(rgb555);
+            this->sprPalette[selected >> 1] = colorFinal;
 
             if(ocps & 0x80) {
                 this->gameboy->mmu->writeIO(OCPS, (u8) (((ocps & 0x3F) + 1) | (ocps & 0x80) | 0x40));
@@ -314,6 +360,19 @@ void PPU::loadState(std::istream& data, u8 version) {
     data.read((char*) this->expandedObp, sizeof(this->expandedObp));
 
     this->mapBanks();
+    this->refreshPalettes();
+}
+
+void PPU::refreshPalettes() {
+    if(this->gameboy->gbMode == MODE_CGB) {
+        for(int i = 0; i < 32; i++) {
+            u16 bg555 = ((this->rawBgPalette[i * 2 + 1] << 8) | this->rawBgPalette[i * 2]) & 0x7FFF;
+            this->bgPalette[i] = (cgbColors == 1) ? cgbColorLut[bg555] : RGB555ToRGB8888(bg555);
+
+            u16 spr555 = ((this->rawSprPalette[i * 2 + 1] << 8) | this->rawSprPalette[i * 2]) & 0x7FFF;
+            this->sprPalette[i] = (cgbColors == 1) ? cgbColorLut[spr555] : RGB555ToRGB8888(spr555);
+        }
+    }
 }
 
 void PPU::saveState(std::ostream& data) {

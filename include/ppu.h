@@ -22,6 +22,9 @@ public:
 
     void transferTiles(u8* dest);
 
+    static void initCgbColorLut();
+    void refreshPalettes();
+
     inline u8 readOam(u16 addr) {
         return this->oam[addr & 0xFF];
     }
