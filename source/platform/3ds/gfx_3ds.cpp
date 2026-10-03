@@ -11,6 +11,7 @@
 #include <3ds.h>
 #include <citro3d.h>
 
+#include "gameboy.h"
 #include "platform/3ds/default_shbin.h"
 #include "platform/common/manager.h"
 #include "platform/common/menu.h"
@@ -29,7 +30,8 @@ static C3D_Mtx projectionTop;
 static C3D_Mtx projectionBottom;
 
 static bool screenInit;
-static C3D_Tex screenTexture;
+static C3D_Tex screenTex[2];
+static int curTexIdx = 0;
 
 static bool borderInit;
 static u16 borderWidth;
@@ -125,10 +127,19 @@ bool gfxInit() {
 
     screenInit = false;
     borderInit = false;
+    curTexIdx = 0;
 
     // Allocate and clear the screen buffer.
     screenBuffer = (u32*) linearAlloc(256 * 256 * sizeof(u32));
     memset(screenBuffer, 0, 256 * 256 * sizeof(u32));
+
+    if(C3D_TexInit(&screenTex[0], 256, 256, GPU_RGBA8) && C3D_TexInit(&screenTex[1], 256, 256, GPU_RGBA8)) {
+        screenInit = true;
+        memset(screenTex[0].data, 0, screenTex[0].size);
+        memset(screenTex[1].data, 0, screenTex[1].size);
+        GSPGPU_FlushDataCache(screenTex[0].data, screenTex[0].size);
+        GSPGPU_FlushDataCache(screenTex[1].data, screenTex[1].size);
+    }
 
     lcdGridInit = false;
     if(C3D_TexInit(&lcdGridTexture, 8, 8, GPU_RGBA8)) {
@@ -177,7 +188,8 @@ void gfxCleanup() {
     }
 
     if(screenInit) {
-        C3D_TexDelete(&screenTexture);
+        C3D_TexDelete(&screenTex[0]);
+        C3D_TexDelete(&screenTex[1]);
         screenInit = false;
     }
 
@@ -334,21 +346,33 @@ void gfxDrawScreen() {
         filter = GPU_LINEAR;
     }
 
-    if(!screenInit || screenTexture.width != screenTexSize || screenTexture.height != screenTexSize) {
-        if(screenInit) {
-            C3D_TexDelete(&screenTexture);
-            screenInit = false;
+    if(!screenInit) {
+        bool init0 = C3D_TexInit(&screenTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
+        bool init1 = C3D_TexInit(&screenTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
+        if(init0 && init1) {
+            screenInit = true;
+            memset(screenTex[0].data, 0, screenTex[0].size);
+            memset(screenTex[1].data, 0, screenTex[1].size);
+            GSPGPU_FlushDataCache(screenTex[0].data, screenTex[0].size);
+            GSPGPU_FlushDataCache(screenTex[1].data, screenTex[1].size);
+        } else {
+            if(init0) {
+                C3D_TexDelete(&screenTex[0]);
+            }
+            if(init1) {
+                C3D_TexDelete(&screenTex[1]);
+            }
+            return;
         }
-
-        screenInit = C3D_TexInit(&screenTexture, screenTexSize, screenTexSize, GPU_RGBA8);
     }
 
-    C3D_TexSetFilter(&screenTexture, filter, filter);
+    C3D_TexSetFilter(&screenTex[0], filter, filter);
+    C3D_TexSetFilter(&screenTex[1], filter, filter);
 
     GSPGPU_FlushDataCache(transferBuffer, screenTexSize * screenTexSize * sizeof(u32));
-    C3D_SyncDisplayTransfer(transferBuffer, (u32) GX_BUFFER_DIM(screenTexSize, screenTexSize), (u32*) screenTexture.data, (u32) GX_BUFFER_DIM(screenTexSize, screenTexSize), GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
+    C3D_SyncDisplayTransfer(transferBuffer, (u32) GX_BUFFER_DIM(screenTexSize, screenTexSize), (u32*) screenTex[curTexIdx].data, (u32) GX_BUFFER_DIM(screenTexSize, screenTexSize), GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO));
 
-    GSPGPU_InvalidateDataCache(screenTexture.data, screenTexture.size);
+    GSPGPU_InvalidateDataCache(screenTex[curTexIdx].data, screenTex[curTexIdx].size);
 
     if(!C3D_FrameBegin(0)) {
         return;
@@ -447,11 +471,23 @@ void gfxDrawScreen() {
         const float x2 = x1 + screenWidth;
         const float y2 = y1 + screenHeight;
 
-        C3D_TexBind(0, &screenTexture);
+        bool blurActive = (gameboy != nullptr && gameboy->settings.emulateBlur);
+
+        C3D_TexBind(0, &screenTex[curTexIdx]);
         C3D_TexEnv* env0 = C3D_GetTexEnv(0);
         C3D_TexEnvInit(env0);
-        C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-        C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+
+        if(blurActive) {
+            C3D_TexBind(2, &screenTex[curTexIdx ^ 1]);
+            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
+            C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+            C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+            C3D_TexEnvFunc(env0, C3D_Both, GPU_INTERPOLATE);
+            C3D_TexEnvColor(env0, 0xA8A8A8A8);
+        } else {
+            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+            C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+        }
 
         if(lcdActive) {
             C3D_TexBind(1, &lcdGridTexture);
@@ -494,6 +530,11 @@ void gfxDrawScreen() {
 
     // Draw the border.
     if(borderInit && customBordersEnabled && scaleMode != 4) {
+        C3D_TexEnv* borderEnv0 = C3D_GetTexEnv(0);
+        C3D_TexEnvInit(borderEnv0);
+        C3D_TexEnvSrc(borderEnv0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+        C3D_TexEnvFunc(borderEnv0, C3D_Both, GPU_REPLACE);
+
         C3D_TexEnvInit(C3D_GetTexEnv(1));
 
         // Calculate VBO points.
@@ -555,6 +596,7 @@ void gfxDrawScreen() {
     }
 
     C3D_FrameEnd(0);
+    curTexIdx ^= 1;
     if(!mgrGetFastForward()) {
         gspWaitForVBlank();
     }

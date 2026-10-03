@@ -11,6 +11,7 @@
 .out outpos position
 .out outtc0 texcoord0
 .out outtc1 texcoord1
+.out outtc2 texcoord2
 
 ; Inputs (defined as aliases for convenience)
 .alias inpos  v0
@@ -31,6 +32,7 @@
 	dp4 outpos.w, projection[3], r0
 
 	mov outtc0, intex
+	mov outtc2, intex
 
 	mov r1.xy, ingrid
 	mov r1.z,  zeros

@@ -156,6 +156,12 @@ void configLoadOptions(INIReader &reader) {
                 if(value == -1 && strcmp(menuList[i].options[j].name, "CGB Colors") == 0) {
                     value = (int) reader.GetInteger("options", "cgbColors", -1);
                 }
+                if(value == -1 && strcmp(menuList[i].options[j].name, "LCD Ghosting") == 0) {
+                    value = (int) reader.GetInteger("options", "Emulate Blur", -1);
+                    if(value == -1) {
+                        value = (int) reader.GetInteger("options", "emulateBlur", -1);
+                    }
+                }
                 if(value != -1) {
                     menuList[i].options[j].selection = value;
                     menuList[i].options[j].function(value);
@@ -174,6 +180,9 @@ void configSaveOptions(std::ofstream &stream) {
                 stream << menuList[i].options[j].name << "=" << menuList[i].options[j].selection << "\n";
                 if(strcmp(menuList[i].options[j].name, "CGB Colors") == 0) {
                     stream << "cgbColors=" << menuList[i].options[j].selection << "\n";
+                }
+                if(strcmp(menuList[i].options[j].name, "LCD Ghosting") == 0) {
+                    stream << "emulateBlur=" << menuList[i].options[j].selection << "\n";
                 }
             }
         }

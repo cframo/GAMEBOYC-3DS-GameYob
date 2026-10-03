@@ -403,7 +403,7 @@ SubMenu menuList[] = {
                         {"CGB Colors", setCgbColorsFunc, 2, {"Raw", "Accurate"}, 0},
                         {"FF Frame Skip", setFastForwardFrameSkipFunc, 4, {"0", "1", "2", "3"}, 3},
                         {"Per Pixel Rendering", setPerPixelRenderingFunc, 2, {"Off", "On"}, 0},
-                        {"Emulate Blur", setEmulateBlurFunc, 2, {"Off", "On"}, 0},
+                        {"LCD Ghosting", setEmulateBlurFunc, 2, {"Off", "On"}, 0},
                         {"Colorize GB", gbColorizeFunc, 14, {"Off", "Auto", "Inverted", "Pastel Mix", "Red", "Orange", "Yellow", "Green", "Blue", "Brown", "Dark Green", "Dark Blue", "Dark Brown", "Classic Green"}, 1},
                         {"Custom Borders", setCustomBordersEnabledFunc, 2, {"Off", "On"}, 1},
                         {"Border Scaling", setBorderScaleModeFunc, 2, {"Pre-Scaled", "Scale Base"}, 0},

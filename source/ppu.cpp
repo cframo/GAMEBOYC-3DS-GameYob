@@ -785,12 +785,7 @@ inline void PPU::drawPixel(u8 x, u8 y) {
                     }
                 }
 
-                if(this->gameboy->settings.emulateBlur) {
-                    u32 oldColor = *colorOut;
-                    *colorOut = (u32) (((u64) colorDst + (u64) oldColor - ((colorDst ^ oldColor) & 0x01010101)) >> 1);
-                } else {
-                    *colorOut = colorDst;
-                }
+                *colorOut = colorDst;
             }
 
             break;
@@ -821,7 +816,6 @@ inline void PPU::drawScanline(u8 scanline) {
 
                 const bool isCGB = (this->gameboy->gbMode == MODE_CGB);
                 const bool isSGB = (this->gameboy->gbMode == MODE_SGB);
-                const bool emulateBlur = this->gameboy->settings.emulateBlur;
 
                 const u32* const baseBgPalette = (this->gameboy->gbMode != MODE_GB || !this->gameboy->mmu->isBiosMapped()) ? (u32*) this->bgPalette : grayScalePalette;
                 const u32* const baseSprPalette = (this->gameboy->gbMode != MODE_GB || !this->gameboy->mmu->isBiosMapped()) ? (u32*) this->sprPalette : grayScalePalette;
@@ -912,12 +906,7 @@ inline void PPU::drawScanline(u8 scanline) {
                                 outputColor = baseBgPalette[this->expandedBgp[colorId]];
                             }
 
-                            if(emulateBlur) {
-                                u32 oldColor = lineBuffer[pixelX];
-                                lineBuffer[pixelX] = (u32) (((u64) outputColor + (u64) oldColor - ((outputColor ^ oldColor) & 0x01010101)) >> 1);
-                            } else {
-                                lineBuffer[pixelX] = outputColor;
-                            }
+                            lineBuffer[pixelX] = outputColor;
                         }
                     }
                 }
@@ -986,12 +975,7 @@ inline void PPU::drawScanline(u8 scanline) {
                                 outputColor = baseBgPalette[this->expandedBgp[colorId]];
                             }
 
-                            if(emulateBlur) {
-                                u32 oldColor = lineBuffer[pixelX];
-                                lineBuffer[pixelX] = (u32) (((u64) outputColor + (u64) oldColor - ((outputColor ^ oldColor) & 0x01010101)) >> 1);
-                            } else {
-                                lineBuffer[pixelX] = outputColor;
-                            }
+                            lineBuffer[pixelX] = outputColor;
                         }
                     }
                 }
@@ -1023,12 +1007,7 @@ inline void PPU::drawScanline(u8 scanline) {
                                     outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
                                 }
 
-                                if(emulateBlur) {
-                                    u32 oldColor = lineBuffer[pixelX];
-                                    lineBuffer[pixelX] = (u32) (((u64) outputColor + (u64) oldColor - ((outputColor ^ oldColor) & 0x01010101)) >> 1);
-                                } else {
-                                    lineBuffer[pixelX] = outputColor;
-                                }
+                                lineBuffer[pixelX] = outputColor;
                             }
                         }
                     }
