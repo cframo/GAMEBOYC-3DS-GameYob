@@ -1,6 +1,11 @@
 #include <math.h>
 #include <string.h>
 
+#ifdef BACKEND_3DS
+#include <3ds.h>
+extern int gameScreen;
+#endif
+
 #include "cpu.h"
 #include "gameboy.h"
 #include "mmu.h"
@@ -111,9 +116,46 @@ void PPU::initCgbColorLut() {
     }
 }
 
+void PPU::initBuffers() {
+#ifdef BACKEND_3DS
+    if(this->sprBuffer == nullptr) {
+        this->sprBuffer = (u32*) linearAlloc(256 * 256 * sizeof(u32));
+    }
+    if(this->sprBuffer != nullptr) {
+        memset(this->sprBuffer, 0, 256 * 256 * sizeof(u32));
+    }
+#else
+    if(this->sprBuffer == nullptr) {
+        this->sprBuffer = new u32[256 * 256]();
+    }
+#endif
+}
+
+void PPU::clearSprBuffer() {
+    if(this->sprBuffer != nullptr && this->sprDirty) {
+        memset(&this->sprBuffer[40 * 256], 0, 144 * 256 * sizeof(u32));
+        this->sprDirty = false;
+    }
+}
+
 PPU::PPU(Gameboy* gb) {
     this->gameboy = gb;
     PPU::initCgbColorLut();
+    this->initBuffers();
+}
+
+PPU::~PPU() {
+#ifdef BACKEND_3DS
+    if(this->sprBuffer != nullptr) {
+        linearFree(this->sprBuffer);
+        this->sprBuffer = nullptr;
+    }
+#else
+    if(this->sprBuffer != nullptr) {
+        delete[] this->sprBuffer;
+        this->sprBuffer = nullptr;
+    }
+#endif
 }
 
 void PPU::reset() {
@@ -123,6 +165,11 @@ void PPU::reset() {
     this->statInterruptSignal = false;
 
     this->scanlineX = 0;
+
+    if(this->sprBuffer != nullptr) {
+        memset(this->sprBuffer, 0, 256 * 256 * sizeof(u32));
+    }
+    this->sprDirty = false;
 
     memset(this->currTileLines, 0, sizeof(this->currTileLines));
     memset(this->currSpriteLines, 0, sizeof(this->currSpriteLines));
@@ -982,6 +1029,10 @@ inline void PPU::drawScanline(u8 scanline) {
 
                 // Sprites
                 if((lcdc & 0x02) != 0) {
+#ifdef BACKEND_3DS
+                    bool is3D = (this->stereoEnabled && this->sprBuffer != nullptr);
+                    u32* sprLineBuffer = is3D ? &this->sprBuffer[(scanline + 40) * 256 + 48] : nullptr;
+#endif
                     for(s8 spriteId = (s8) (this->currSprites - 1); spriteId >= 0; spriteId--) {
                         SpriteLine* line = &this->currSpriteLines[spriteId];
                         const u32* const spritePalette = isCGB ? &baseSprPalette[line->palette << 2] : nullptr;
@@ -1007,7 +1058,16 @@ inline void PPU::drawScanline(u8 scanline) {
                                     outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
                                 }
 
+#ifdef BACKEND_3DS
+                                if(is3D) {
+                                    sprLineBuffer[pixelX] = outputColor | 0xFF;
+                                    this->sprDirty = true;
+                                } else {
+                                    lineBuffer[pixelX] = outputColor;
+                                }
+#else
                                 lineBuffer[pixelX] = outputColor;
+#endif
                             }
                         }
                     }

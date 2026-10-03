@@ -130,6 +130,9 @@ public:
 
     bool ranFrame;
     u32 audioSamplesWritten;
+
+    float currentSlider = 0.0f;
+    bool stereoEnabled = false;
 private:
     bool poweredOn = false;
 };

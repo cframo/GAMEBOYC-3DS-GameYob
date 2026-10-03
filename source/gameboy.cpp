@@ -1,5 +1,9 @@
 #include <string.h>
 
+#ifdef BACKEND_3DS
+#include <3ds.h>
+#endif
+
 #include "apu.h"
 #include "cartridge.h"
 #include "cpu.h"
@@ -81,6 +85,9 @@ void Gameboy::powerOn() {
 
 void Gameboy::powerOff() {
     this->poweredOn = false;
+    if(this->ppu != nullptr) {
+        this->ppu->sprDirty = false;
+    }
 }
 
 bool Gameboy::loadState(std::istream& data) {
@@ -132,6 +139,17 @@ void Gameboy::runFrame() {
     if(!this->poweredOn) {
         return;
     }
+
+#ifdef BACKEND_3DS
+    extern int gameScreen;
+    this->currentSlider = (gameScreen == 0) ? osGet3DSliderState() : 0.0f;
+    this->stereoEnabled = (this->currentSlider > 0.001f);
+    if(this->ppu != nullptr) {
+        this->ppu->currentSlider = this->currentSlider;
+        this->ppu->stereoEnabled = this->stereoEnabled;
+        this->ppu->clearSprBuffer();
+    }
+#endif
 
     this->ranFrame = false;
     this->audioSamplesWritten = 0;

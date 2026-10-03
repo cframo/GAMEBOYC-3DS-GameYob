@@ -10,6 +10,7 @@ class Gameboy;
 class PPU {
 public:
     PPU(Gameboy* gb);
+    ~PPU();
 
     void reset();
 
@@ -24,6 +25,9 @@ public:
 
     static void initCgbColorLut();
     void refreshPalettes();
+
+    void initBuffers();
+    void clearSprBuffer();
 
     inline u8 readOam(u16 addr) {
         return this->oam[addr & 0xFF];
@@ -40,6 +44,15 @@ public:
     inline u32* getSprPalette() {
         return this->sprPalette;
     }
+
+    inline u32* getSprBuffer() {
+        return this->sprBuffer;
+    }
+
+    u32* sprBuffer = nullptr;
+    float currentSlider = 0.0f;
+    bool stereoEnabled = false;
+    bool sprDirty = false;
 private:
     typedef struct {
         u8 color[8];
