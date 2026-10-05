@@ -49,10 +49,25 @@ public:
         return this->sprBuffer;
     }
 
+    inline bool hasSpritesThisFrame() const {
+        return this->sprDrawnThisFrame;
+    }
+
+    inline u8 getSprMinY() const {
+        return this->sprMinY;
+    }
+
+    inline u8 getSprMaxY() const {
+        return this->sprMaxY;
+    }
+
     u32* sprBuffer = nullptr;
     float currentSlider = 0.0f;
     bool stereoEnabled = false;
     bool sprDirty = false;
+    bool sprDrawnThisFrame = false;
+    u8 sprMinY = 144;
+    u8 sprMaxY = 0;
 private:
     typedef struct {
         u8 color[8];

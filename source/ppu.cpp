@@ -133,9 +133,16 @@ void PPU::initBuffers() {
 
 void PPU::clearSprBuffer() {
     if(this->sprBuffer != nullptr && this->sprDirty) {
-        memset(&this->sprBuffer[40 * 256], 0, 144 * 256 * sizeof(u32));
+        if(this->sprMinY <= this->sprMaxY) {
+            for(u8 y = this->sprMinY; y <= this->sprMaxY; ++y) {
+                memset(&this->sprBuffer[(y + 40) * 256 + 48], 0, 160 * sizeof(u32));
+            }
+        }
         this->sprDirty = false;
     }
+    this->sprMinY = 144;
+    this->sprMaxY = 0;
+    this->sprDrawnThisFrame = false;
 }
 
 PPU::PPU(Gameboy* gb) {
@@ -170,6 +177,9 @@ void PPU::reset() {
         memset(this->sprBuffer, 0, 256 * 256 * sizeof(u32));
     }
     this->sprDirty = false;
+    this->sprDrawnThisFrame = false;
+    this->sprMinY = 144;
+    this->sprMaxY = 0;
 
     memset(this->currTileLines, 0, sizeof(this->currTileLines));
     memset(this->currSpriteLines, 0, sizeof(this->currSpriteLines));
@@ -1032,6 +1042,7 @@ inline void PPU::drawScanline(u8 scanline) {
 #ifdef BACKEND_3DS
                     bool is3D = (this->stereoEnabled && this->sprBuffer != nullptr);
                     u32* sprLineBuffer = is3D ? &this->sprBuffer[(scanline + 40) * 256 + 48] : nullptr;
+                    bool lineHasSprite = false;
 #endif
                     for(s8 spriteId = (s8) (this->currSprites - 1); spriteId >= 0; spriteId--) {
                         SpriteLine* line = &this->currSpriteLines[spriteId];
@@ -1060,8 +1071,8 @@ inline void PPU::drawScanline(u8 scanline) {
 
 #ifdef BACKEND_3DS
                                 if(is3D) {
-                                    sprLineBuffer[pixelX] = outputColor | 0xFF;
-                                    this->sprDirty = true;
+                                    sprLineBuffer[pixelX] = outputColor | 0x000000FF;
+                                    lineHasSprite = true;
                                 } else {
                                     lineBuffer[pixelX] = outputColor;
                                 }
@@ -1071,6 +1082,18 @@ inline void PPU::drawScanline(u8 scanline) {
                             }
                         }
                     }
+#ifdef BACKEND_3DS
+                    if(lineHasSprite) {
+                        this->sprDirty = true;
+                        this->sprDrawnThisFrame = true;
+                        if(scanline < this->sprMinY) {
+                            this->sprMinY = scanline;
+                        }
+                        if(scanline > this->sprMaxY) {
+                            this->sprMaxY = scanline;
+                        }
+                    }
+#endif
                 }
             }
 

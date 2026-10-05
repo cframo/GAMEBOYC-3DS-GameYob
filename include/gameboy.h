@@ -114,6 +114,10 @@ public:
         return this->poweredOn;
     }
 
+    inline PPU* getPPU() const {
+        return this->ppu;
+    }
+
     GameboySettings settings;
 
     Cartridge* cartridge = nullptr;

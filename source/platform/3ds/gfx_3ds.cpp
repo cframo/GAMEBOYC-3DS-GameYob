@@ -84,6 +84,7 @@ static inline void drawQuad(float x1, float y1, float x2, float y2, float u1, fl
 }
 
 bool gfxInit() {
+    osSetSpeedupEnable(true);
     gfxInitDefault();
     gfxSet3D(true);
     gfxInitialized = true;
@@ -455,6 +456,7 @@ void gfxDrawScreen() {
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
     if(screenTex[curTexIdx].data != nullptr) {
+        GSPGPU_FlushDataCache((u32*) screenBuffer + 40 * 256, 144 * 256 * sizeof(u32));
         C3D_SyncDisplayTransfer(
             (u32*) screenBuffer, GX_BUFFER_DIM(256, 256),
             (u32*) screenTex[curTexIdx].data, GX_BUFFER_DIM(256, 256),
@@ -462,13 +464,21 @@ void gfxDrawScreen() {
         );
     }
 
-    u32* sprBuffer = (isStereo && sprTexInit && gameboy != nullptr && gameboy->ppu != nullptr) ? gameboy->ppu->sprBuffer : nullptr;
-    if(sprBuffer != nullptr && sprTex.data != nullptr) {
-        C3D_SyncDisplayTransfer(
-            (u32*) sprBuffer, GX_BUFFER_DIM(256, 256),
-            (u32*) sprTex.data, GX_BUFFER_DIM(256, 256),
-            displayFlags
-        );
+    if(isStereo && sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame()) {
+        u32* sprBuffer = gameboy->getPPU()->sprBuffer;
+        if(sprBuffer != nullptr && sprTex.data != nullptr) {
+            u8 minY = gameboy->getPPU()->getSprMinY();
+            u8 maxY = gameboy->getPPU()->getSprMaxY();
+            if(minY <= maxY) {
+                u32 flushSize = (maxY - minY + 1) * 256 * sizeof(u32);
+                GSPGPU_FlushDataCache((u32*) sprBuffer + (minY + 40) * 256, flushSize);
+                C3D_SyncDisplayTransfer(
+                    (u32*) sprBuffer, GX_BUFFER_DIM(256, 256),
+                    (u32*) sprTex.data, GX_BUFFER_DIM(256, 256),
+                    displayFlags
+                );
+            }
+        }
     }
 
     if(!C3D_FrameBegin(0)) {
@@ -615,7 +625,7 @@ void gfxDrawScreen() {
             drawQuad(x1 + bgOffset, y1, x2 + bgOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
             // Sprites
-            if(sprTexInit) {
+            if(sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame()) {
                 C3D_TexBind(0, &sprTex);
                 C3D_TexEnv* sprEnv0 = C3D_GetTexEnv(0);
                 C3D_TexEnvInit(sprEnv0);
@@ -693,9 +703,6 @@ void gfxDrawScreen() {
 
     C3D_FrameEnd(0);
     curTexIdx ^= 1;
-    if(!mgrGetFastForward()) {
-        gspWaitForVBlank();
-    }
 }
 
 #endif
