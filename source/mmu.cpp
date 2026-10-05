@@ -82,9 +82,11 @@ static const u8 initialHramCGB[0x100] = {
 
 MMU::MMU(Gameboy* gameboy) {
     this->gameboy = gameboy;
+    this->cartridgeRom0 = nullptr;
 }
 
 void MMU::reset() {
+    this->cartridgeRom0 = nullptr;
     memset(this->banks, 0, sizeof(this->banks));
 	for(auto& func : this->bankReadFuncs)  func = nullptr;
 	for(auto& func : this->bankWriteFuncs) func = nullptr;
@@ -115,6 +117,7 @@ void MMU::reset() {
     this->gameboy->mmu->mapIOWriteFunc(BIOS, [this](u16 addr, u8 val) -> void {
         if(this->biosMapped) {
             this->biosMapped = false;
+            this->banks[0] = this->cartridgeRom0;
             this->mapBanks();
             this->gameboy->mmu->writeIO(BIOS, val);
             if(this->gameboy->gbMode == MODE_CGB) {
@@ -165,19 +168,17 @@ void MMU::saveState(std::ostream& data) {
     data.write((char*) &this->useRealBios, sizeof(this->useRealBios));
 }
 
-u8 MMU::read(u16 addr) {
-    u8 area = (u8) (addr >> 12);
-    if(this->bankReadFuncs[area] != NULL) {
-        return this->bankReadFuncs[area](addr);
-    } else if(this->banks[area] != NULL) {
-        return this->banks[area][addr & 0xFFF];
-    } else {
-        if(this->gameboy->settings.printDebug != NULL) {
-            this->gameboy->settings.printDebug("Attempted to read from unmapped memory bank: 0x%x\n", area);
-        }
-
-        return 0xFF;
+u8 MMU::readSlow(u16 addr) {
+    u8 bank = (u8) (addr >> 12);
+    if(this->bankReadFuncs[bank] != nullptr) {
+        return this->bankReadFuncs[bank](addr);
     }
+
+    if(this->gameboy->settings.printDebug != nullptr) {
+        this->gameboy->settings.printDebug("Attempted to read from unmapped memory bank: 0x%x\n", bank);
+    }
+
+    return 0xFF;
 }
 
 void MMU::write(u16 addr, u8 val) {
@@ -204,14 +205,16 @@ void MMU::mapBanks() {
         this->mapBankReadFunc(0x0, [this](u16 addr) -> u8 {
             if(addr < 0x100 || (addr >= 0x200 && addr <= 0x8FF)) {
                 return (this->useRealBios ? bios_bin : dummy_bios_bin)[addr & 0xFFF];
-            } else if(this->banks[0x0] != NULL) {
+            } else if(this->cartridgeRom0 != nullptr) {
+                return this->cartridgeRom0[addr & 0xFFF];
+            } else if(this->banks[0x0] != nullptr) {
                 return this->banks[0x0][addr & 0xFFF];
             }
 
             return 0xFF;
         });
     } else {
-        this->mapBankReadFunc(0x0, NULL);
+        this->mapBankReadFunc(0x0, nullptr);
     }
 
     this->mapBankReadFunc(0xF, [this](u16 addr) -> u8 {

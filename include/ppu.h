@@ -53,6 +53,10 @@ public:
         return this->sprDrawnThisFrame;
     }
 
+    inline void setStereoEnabled(bool enabled) {
+        this->stereoEnabled = enabled;
+    }
+
     inline u8 getSprMinY() const {
         return this->sprMinY;
     }

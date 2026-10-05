@@ -98,10 +98,22 @@ public:
     void loadState(std::istream& data, u8 version);
     void saveState(std::ostream& data);
 
-    u8 read(u16 addr);
+    u8 readSlow(u16 addr);
+    inline u8 read(u16 addr) {
+        u8* block = this->banks[addr >> 12];
+        if(__builtin_expect(block != nullptr, 1)) {
+            return block[addr & 0x0FFF];
+        }
+        return this->readSlow(addr);
+    }
     void write(u16 addr, u8 val);
 
     inline void mapBankBlock(u8 bank, u8* block) {
+        if((bank & 0xF) == 0 && this->biosMapped) {
+            this->cartridgeRom0 = block;
+            this->banks[0] = nullptr;
+            return;
+        }
         this->banks[bank & 0xF] = block;
     }
 
@@ -138,6 +150,7 @@ private:
     Gameboy* gameboy;
 
     u8* banks[0x10];
+    u8* cartridgeRom0 = nullptr;
     std::function<u8(u16 addr)> bankReadFuncs[0x10];
     std::function<void(u16 addr, u8 val)> bankWriteFuncs[0x10];
 

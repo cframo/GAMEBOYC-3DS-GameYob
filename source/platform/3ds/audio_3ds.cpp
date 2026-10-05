@@ -32,7 +32,7 @@ static s16 lastSampleL = 0;
 static s16 lastSampleR = 0;
 
 static const float PREAMP_GAIN = 1.45f; // Equilibrio óptimo de pegada sin saturar
-static const float HPF_ALPHA = 0.9745f;  // Corte fc ≈ 180 Hz a fs = 44.1 kHz
+static const float HPF_ALPHA = 0.9666f;  // Corte fc ≈ 180 Hz a fs = 32728 Hz
 static const int THRESHOLD = 24576;      // 75% de escala (32767)
 static const int MAX_SAMPLE = 32767;
 
@@ -194,7 +194,7 @@ void audioCleanup() {
 }
 
 u32 audioGetSampleRate() {
-    return 44100;
+    return 32728;
 }
 
 void audioClear() {

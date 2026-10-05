@@ -149,7 +149,7 @@ void Gameboy::runFrame() {
     this->stereoEnabled = (this->currentSlider > 0.001f);
     if(this->ppu != nullptr) {
         this->ppu->currentSlider = this->currentSlider;
-        this->ppu->stereoEnabled = this->stereoEnabled;
+        this->ppu->setStereoEnabled(this->stereoEnabled);
         this->ppu->clearSprBuffer();
     }
 #endif
