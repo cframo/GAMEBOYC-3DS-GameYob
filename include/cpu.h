@@ -6,6 +6,7 @@
 #include "types.h"
 
 class Gameboy;
+class MMU;
 
 #define INT_VBLANK 0x01
 #define INT_LCD 0x02
@@ -97,6 +98,7 @@ private:
     u8 rot(u8 func, u8 val);
 
     Gameboy* gameboy;
+    MMU* mmu = nullptr;
 
     u64 cycleCount;
     u64 eventCycle;

@@ -72,6 +72,8 @@ public:
     bool sprDrawnThisFrame = false;
     u8 sprMinY = 144;
     u8 sprMaxY = 0;
+    u8 prevSprMinY = 0;
+    u8 prevSprMaxY = 143;
 private:
     typedef struct {
         u8 color[8];
@@ -93,7 +95,7 @@ private:
     __attribute__((always_inline)) inline void updateStatSignal();
 
     void updateLineTile(u8 map, u8 x, u8 y);
-    void updateLineSprites();
+    void updateLineSprites(u8 lcdc);
 
     __attribute__((always_inline)) inline void updateScanline();
     void drawPixel(u8 x, u8 y);

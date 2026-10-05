@@ -76,6 +76,20 @@ static const u8 BitReverseTable256[] = {
         0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
 };
 
+// Tabla de desempaquetado rápido: para cada byte, sus 8 bits LSB-first separados (0 o 1).
+// bitExpandLut[byte][px] = (byte >> px) & 1
+static u8 bitExpandLut[256][8];
+static bool bitExpandLutInitialized = false;
+
+static void initBitExpandLut() {
+    for(int b = 0; b < 256; b++) {
+        for(int p = 0; p < 8; p++) {
+            bitExpandLut[b][p] = (u8) ((b >> p) & 1);
+        }
+    }
+    bitExpandLutInitialized = true;
+}
+
 extern int cgbColors;
 
 static u32 cgbColorLut[32768];
@@ -115,6 +129,10 @@ void PPU::initCgbColorLut() {
 
         cgbLutInitialized = true;
     }
+
+    if(!bitExpandLutInitialized) {
+        initBitExpandLut();
+    }
 }
 
 void PPU::initBuffers() {
@@ -133,6 +151,21 @@ void PPU::initBuffers() {
 }
 
 void PPU::clearSprBuffer() {
+    if(!this->stereoEnabled || !this->sprDirty || this->sprBuffer == nullptr) {
+        this->sprDirty = false;
+        this->sprDrawnThisFrame = false;
+        return;
+    }
+    // Unión de cotas: asegura que cualquier sprite que se haya movido o desaparecido quede en 0
+    u8 clearStart = (this->sprMinY < this->prevSprMinY) ? this->sprMinY : this->prevSprMinY;
+    u8 clearEnd = (this->sprMaxY > this->prevSprMaxY) ? this->sprMaxY : this->prevSprMaxY;
+    if(clearStart <= clearEnd && clearEnd < 144) {
+        u32 startLine = clearStart + 40;
+        u32 count = clearEnd - clearStart + 1;
+        memset(&this->sprBuffer[startLine * 256], 0, count * 256 * sizeof(u32));
+    }
+    this->prevSprMinY = this->sprMinY;
+    this->prevSprMaxY = this->sprMaxY;
     this->sprMinY = 144;
     this->sprMaxY = 0;
     this->sprDirty = false;
@@ -171,6 +204,8 @@ void PPU::reset() {
     this->sprDrawnThisFrame = false;
     this->sprMinY = 144;
     this->sprMaxY = 0;
+    this->prevSprMinY = 0;
+    this->prevSprMaxY = 143;
 
     memset(this->currTileLines, 0, sizeof(this->currTileLines));
     memset(this->currSpriteLines, 0, sizeof(this->currSpriteLines));
@@ -552,7 +587,9 @@ void PPU::update() {
                     break;
                 case LCD_ACCESS_OAM:
                     this->scanlineX = 0;
-                    this->updateLineSprites();
+                    if(this->gameboy->settings.perPixelRendering) {
+                        this->updateLineSprites(this->gameboy->mmu->readIO(LCDC));
+                    }
 
                     mode = LCD_ACCESS_OAM_VRAM;
                     this->gameboy->mmu->writeIO(STAT, (u8) ((stat & ~3) | LCD_ACCESS_OAM_VRAM));
@@ -684,25 +721,32 @@ inline void PPU::updateLineTile(u8 map, u8 x, u8 y) {
     }
 }
 
-inline void PPU::updateLineSprites() {
+inline void PPU::updateLineSprites(u8 lcdc) {
+    if((lcdc & 0x02) == 0) {
+        this->currSprites = 0;
+        return;
+    }
+
     u8 ly = this->gameboy->mmu->readIO(LY);
 
-    bool large = (this->gameboy->mmu->readIO(LCDC) & 4) != 0;
+    bool large = (lcdc & 4) != 0;
     u8 height = (u8) (large ? 16 : 8);
 
     this->currSprites = 0;
-    for(u8 offset = 0; offset < 0xA0 && this->currSprites < 10; offset += 4) {
-        SpriteLine* line = &this->currSpriteLines[this->currSprites];
+    u8* const oamPtr = this->oam;
 
-        u8 y = (u8) (this->oam[offset + 0] - 16);
+    for(u8 offset = 0; offset < 0xA0; offset += 4) {
+        u8 y = (u8) (oamPtr[offset + 0] - 16);
         u8 ty = (u8) (ly - y);
         if(ty >= height) {
             continue;
         }
 
-        line->x = (u8) (this->oam[offset + 1] - 8);
-        u8 tile = (u8) (this->oam[offset + 2] & ~((u8) large));
-        u8 flags = this->oam[offset + 3];
+        SpriteLine* line = &this->currSpriteLines[this->currSprites];
+
+        line->x = (u8) (oamPtr[offset + 1] - 8);
+        u8 tile = (u8) (oamPtr[offset + 2] & ~((u8) large));
+        u8 flags = oamPtr[offset + 3];
 
         line->palette = (u8) (flags & 7);
         u8 bank = (u8) ((flags >> 3) & 1);
@@ -721,14 +765,17 @@ inline void PPU::updateLineSprites() {
             b2 = BitReverseTable256[b2];
         }
 
-        u16 pxData = (u16) (BitStretchTable256[b1] | (BitStretchTable256[b2] << 1));
-
+        const u8* const lut1 = bitExpandLut[b1];
+        const u8* const lut2 = bitExpandLut[b2];
         for(u8 tx = 0; tx < 8; tx++) {
-            line->color[tx] = (u8) ((pxData >> (tx << 1)) & 3);
+            line->color[tx] = lut1[tx] | (u8) (lut2[tx] << 1);
             line->depth[tx] = depth;
         }
 
         this->currSprites++;
+        if(this->currSprites >= 10) {
+            break;
+        }
     }
 }
 
@@ -1030,15 +1077,10 @@ inline void PPU::drawScanline(u8 scanline) {
 
                 // Sprites
                 if((lcdc & 0x02) != 0) {
+                    this->updateLineSprites(lcdc);
 #ifdef BACKEND_3DS
                     if(this->stereoEnabled && this->sprBuffer != nullptr) {
                         u32* sprLine = &this->sprBuffer[(scanline + 40) * 256 + 48];
-                        for(int px = 0; px < 160; px += 4) {
-                            sprLine[px + 0] = 0;
-                            sprLine[px + 1] = 0;
-                            sprLine[px + 2] = 0;
-                            sprLine[px + 3] = 0;
-                        }
                         bool lineHasSprite = false;
 
                         for(s8 spriteId = (s8) (this->currSprites - 1); spriteId >= 0; spriteId--) {

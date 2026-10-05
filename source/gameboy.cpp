@@ -90,6 +90,8 @@ void Gameboy::powerOff() {
         this->ppu->sprDrawnThisFrame = false;
         this->ppu->sprMinY = 144;
         this->ppu->sprMaxY = 0;
+        this->ppu->prevSprMinY = 0;
+        this->ppu->prevSprMaxY = 143;
     }
 }
 

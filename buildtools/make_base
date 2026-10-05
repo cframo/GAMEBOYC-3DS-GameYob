@@ -12,7 +12,7 @@ STRIP   := $(PREFIX)strip
 PICASSO ?= $(DEVKITPRO)/tools/bin/picasso
 
 # Arquitectura CTR (ARM11 MPCore de Nintendo 3DS)
-ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mfpu=vfp -mtp=soft
+ARCH    := -march=armv6k -mtune=mpcore -mfloat-abi=hard -mfpu=vfp
 
 TARGET_BUILD := $(BUILD_DIR)/$(TARGET)
 

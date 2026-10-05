@@ -104,9 +104,33 @@ public:
         if(__builtin_expect(block != nullptr, 1)) {
             return block[addr & 0x0FFF];
         }
+        // Ruta rápida de HRAM 0xFF80 - 0xFFFE (evita miles de llamadas a readSlow por frame)
+        if(__builtin_expect((addr & 0xFF80) == 0xFF80 && addr < 0xFFFF, 0)) {
+            return this->hram[addr & 0x00FF];
+        }
         return this->readSlow(addr);
     }
-    void write(u16 addr, u8 val);
+
+    void writeSlow(u16 addr, u8 val);
+    inline void write(u16 addr, u8 val) {
+        u8 bank = (u8) (addr >> 12);
+        // WRAM 0xC000 - 0xDFFF
+        if(__builtin_expect((bank & ~1) == 0xC, 1)) {
+            this->banks[bank][addr & 0x0FFF] = val;
+            return;
+        }
+        // Echo RAM 0xE000 - 0xFDFF (espejo de WRAM)
+        if(__builtin_expect(bank == 0xE, 0)) {
+            this->banks[0xC][addr & 0x0FFF] = val;
+            return;
+        }
+        // HRAM 0xFF80 - 0xFFFE
+        if(__builtin_expect((addr & 0xFF80) == 0xFF80 && addr < 0xFFFF, 0)) {
+            this->hram[addr & 0x00FF] = val;
+            return;
+        }
+        this->writeSlow(addr, val);
+    }
 
     inline void mapBankBlock(u8 bank, u8* block) {
         if((bank & 0xF) == 0 && this->biosMapped) {

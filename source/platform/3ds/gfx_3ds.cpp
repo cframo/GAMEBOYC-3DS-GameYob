@@ -36,7 +36,7 @@ static C3D_Tex screenTex[2];
 static int curTexIdx = 0;
 
 static bool sprTexInit = false;
-static C3D_Tex sprTex;
+static C3D_Tex sprTex[2];
 
 static bool borderInit;
 static u16 borderWidth;
@@ -50,6 +50,7 @@ static C3D_Tex lcdGridTexture;
 extern int lcdGrid;
 
 static u32* screenBuffer;
+static u32* sprBuffer;
 
 static bool gfxInitialized = false;
 
@@ -98,7 +99,7 @@ bool gfxInit() {
 
     u32 displayFlags = GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) | GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
-    targetTopLeft = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, 0);
+    targetTopLeft = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, (C3D_DEPTHTYPE)-1);
     if(targetTopLeft == nullptr) {
         gfxCleanup();
         return false;
@@ -106,7 +107,7 @@ bool gfxInit() {
 
     C3D_RenderTargetSetOutput(targetTopLeft, GFX_TOP, GFX_LEFT, displayFlags);
 
-    targetTopRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, 0);
+    targetTopRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, (C3D_DEPTHTYPE)-1);
     if(targetTopRight == nullptr) {
         gfxCleanup();
         return false;
@@ -175,8 +176,10 @@ bool gfxInit() {
     curTexIdx = 0;
 
     // Allocate and clear the screen buffer.
-    screenBuffer = (u32*) linearAlloc(256 * 256 * sizeof(u32));
-    memset(screenBuffer, 0, 256 * 256 * sizeof(u32));
+    u32* contiguousGfxMem = (u32*) linearMemAlign(256 * 256 * sizeof(u32) * 2, 0x80);
+    screenBuffer = contiguousGfxMem;
+    sprBuffer = contiguousGfxMem + (256 * 256);
+    memset(contiguousGfxMem, 0, 256 * 256 * sizeof(u32) * 2);
 
     if(C3D_TexInit(&screenTex[0], 256, 256, GPU_RGBA8) && C3D_TexInit(&screenTex[1], 256, 256, GPU_RGBA8)) {
         screenInit = true;
@@ -187,10 +190,12 @@ bool gfxInit() {
     }
 
     sprTexInit = false;
-    if(C3D_TexInit(&sprTex, 256, 256, GPU_RGBA8)) {
+    if(C3D_TexInit(&sprTex[0], 256, 256, GPU_RGBA8) && C3D_TexInit(&sprTex[1], 256, 256, GPU_RGBA8)) {
         sprTexInit = true;
-        memset(sprTex.data, 0, sprTex.size);
-        GSPGPU_FlushDataCache(sprTex.data, sprTex.size);
+        memset(sprTex[0].data, 0, sprTex[0].size);
+        memset(sprTex[1].data, 0, sprTex[1].size);
+        GSPGPU_FlushDataCache(sprTex[0].data, sprTex[0].size);
+        GSPGPU_FlushDataCache(sprTex[1].data, sprTex[1].size);
     }
 
     lcdGridInit = false;
@@ -225,7 +230,8 @@ bool gfxInit() {
 
 void gfxCleanup() {
     if(sprTexInit) {
-        C3D_TexDelete(&sprTex);
+        C3D_TexDelete(&sprTex[0]);
+        C3D_TexDelete(&sprTex[1]);
         sprTexInit = false;
     }
 
@@ -237,6 +243,7 @@ void gfxCleanup() {
     if(screenBuffer != nullptr) {
         linearFree(screenBuffer);
         screenBuffer = nullptr;
+        sprBuffer = nullptr;
     }
 
     if(borderInit) {
@@ -339,6 +346,10 @@ u32* gfxGetScreenBuffer() {
     return screenBuffer;
 }
 
+u32* gfxGetSprBuffer() {
+    return sprBuffer;
+}
+
 u32 gfxGetScreenPitch() {
     return 256;
 }
@@ -434,20 +445,43 @@ void gfxDrawScreen() {
     C3D_TexSetFilter(&screenTex[0], filter, filter);
     C3D_TexSetFilter(&screenTex[1], filter, filter);
 
-    float slider = (gameboy != nullptr) ? gameboy->currentSlider : 0.0f;
-    bool isStereo = (gameboy != nullptr) ? gameboy->stereoEnabled : false;
+    float currentSlider = (gameScreen == 0) ? osGet3DSliderState() : 0.0f;
+    bool isStereoActive = (currentSlider > 0.001f);
+    if(gameboy != nullptr) {
+        gameboy->currentSlider = currentSlider;
+        gameboy->stereoEnabled = isStereoActive;
+        if(gameboy->getPPU() != nullptr) {
+            gameboy->getPPU()->setStereoEnabled(isStereoActive);
+            gameboy->getPPU()->sprBuffer = sprBuffer;
+        }
+    }
+
+    float slider = currentSlider;
+    bool isStereo = isStereoActive;
 
     if(isStereo) {
         if(!sprTexInit) {
-            sprTexInit = C3D_TexInit(&sprTex, screenTexSize, screenTexSize, GPU_RGBA8);
-            if(sprTexInit) {
-                memset(sprTex.data, 0, sprTex.size);
-                GSPGPU_FlushDataCache(sprTex.data, sprTex.size);
+            bool init0 = C3D_TexInit(&sprTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
+            bool init1 = C3D_TexInit(&sprTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
+            if(init0 && init1) {
+                sprTexInit = true;
+                memset(sprTex[0].data, 0, sprTex[0].size);
+                memset(sprTex[1].data, 0, sprTex[1].size);
+                GSPGPU_FlushDataCache(sprTex[0].data, sprTex[0].size);
+                GSPGPU_FlushDataCache(sprTex[1].data, sprTex[1].size);
+            } else {
+                if(init0) {
+                    C3D_TexDelete(&sprTex[0]);
+                }
+                if(init1) {
+                    C3D_TexDelete(&sprTex[1]);
+                }
             }
         }
 
         if(sprTexInit) {
-            C3D_TexSetFilter(&sprTex, filter, filter);
+            C3D_TexSetFilter(&sprTex[0], filter, filter);
+            C3D_TexSetFilter(&sprTex[1], filter, filter);
         }
     }
 
@@ -455,30 +489,39 @@ void gfxDrawScreen() {
                        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
+    bool hasSprites = isStereoActive && sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame();
+
     if(screenTex[curTexIdx].data != nullptr) {
+        // Vaciar exclusivamente las 144 líneas útiles de screenBuffer
         GSPGPU_FlushDataCache((u32*) screenBuffer + 40 * 256, 144 * 256 * sizeof(u32));
-        C3D_SyncDisplayTransfer(
+
+        // Si el modo 3D y los sprites están activos, vaciar únicamente las líneas sucias delimitadas
+        if(hasSprites) {
+            u8 sprMinY = gameboy->getPPU()->getSprMinY();
+            u8 sprMaxY = gameboy->getPPU()->getSprMaxY();
+            u8 clearStart = (sprMinY < gameboy->getPPU()->prevSprMinY) ? sprMinY : gameboy->getPPU()->prevSprMinY;
+            u8 clearEnd = (sprMaxY > gameboy->getPPU()->prevSprMaxY) ? sprMaxY : gameboy->getPPU()->prevSprMaxY;
+            if(clearStart <= clearEnd && clearEnd < 144) {
+                u32 flushSize = (u32) (clearEnd - clearStart + 1) * 256 * sizeof(u32);
+                GSPGPU_FlushDataCache((u32*) sprBuffer + ((u32) clearStart + 40) * 256, flushSize);
+            }
+        }
+
+        GX_DisplayTransfer(
             (u32*) screenBuffer, GX_BUFFER_DIM(256, 256),
             (u32*) screenTex[curTexIdx].data, GX_BUFFER_DIM(256, 256),
             displayFlags
         );
-    }
 
-    if(isStereo && sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame()) {
-        u32* sprBuffer = gameboy->getPPU()->sprBuffer;
-        if(sprBuffer != nullptr && sprTex.data != nullptr) {
-            u8 minY = gameboy->getPPU()->getSprMinY();
-            u8 maxY = gameboy->getPPU()->getSprMaxY();
-            if(minY <= maxY) {
-                u32 flushSize = (maxY - minY + 1) * 256 * sizeof(u32);
-                GSPGPU_FlushDataCache((u32*) sprBuffer + (minY + 40) * 256, flushSize);
-                C3D_SyncDisplayTransfer(
-                    (u32*) sprBuffer, GX_BUFFER_DIM(256, 256),
-                    (u32*) sprTex.data, GX_BUFFER_DIM(256, 256),
-                    displayFlags
-                );
-            }
+        if(hasSprites) {
+            GX_DisplayTransfer(
+                (u32*) sprBuffer, GX_BUFFER_DIM(256, 256),
+                (u32*) sprTex[curTexIdx].data, GX_BUFFER_DIM(256, 256),
+                displayFlags
+            );
         }
+
+        gspWaitForPPF();
     }
 
     if(!C3D_FrameBegin(0)) {
@@ -576,78 +619,93 @@ void gfxDrawScreen() {
         const float bgOffset = slider * 2.0f;
         const float sprOffset = slider * 2.5f;
 
-        // Configure Background TexEnv (ONCE)
-        C3D_TexBind(0, &screenTex[curTexIdx]);
-        C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-        C3D_TexEnvInit(env0);
+        auto setupBgEnv = [&]() {
+            C3D_TexBind(0, &screenTex[curTexIdx]);
+            C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+            C3D_TexEnvInit(env0);
 
-        if(blurActive) {
-            C3D_TexBind(2, &screenTex[curTexIdx ^ 1]);
-            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
-            C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
-            C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
-            C3D_TexEnvFunc(env0, C3D_Both, GPU_INTERPOLATE);
-            C3D_TexEnvColor(env0, 0xA8A8A8A8);
-        } else {
-            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-            C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-        }
+            if(blurActive) {
+                C3D_TexBind(2, &screenTex[curTexIdx ^ 1]);
+                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
+                C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+                C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+                C3D_TexEnvFunc(env0, C3D_Both, GPU_INTERPOLATE);
+                C3D_TexEnvColor(env0, 0xA8A8A8A8);
+            } else {
+                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+            }
 
-        if(lcdActive) {
-            C3D_TexBind(1, &lcdGridTexture);
-            C3D_TexEnv* env1 = C3D_GetTexEnv(1);
-            C3D_TexEnvInit(env1);
-            C3D_TexEnvSrc(env1, C3D_Both, GPU_PREVIOUS, GPU_TEXTURE1, (GPU_TEVSRC)0);
-            C3D_TexEnvFunc(env1, C3D_Both, GPU_MODULATE);
-        } else {
+            if(lcdActive) {
+                C3D_TexBind(1, &lcdGridTexture);
+                C3D_TexEnv* env1 = C3D_GetTexEnv(1);
+                C3D_TexEnvInit(env1);
+                C3D_TexEnvSrc(env1, C3D_Both, GPU_PREVIOUS, GPU_TEXTURE1, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(env1, C3D_Both, GPU_MODULATE);
+            } else {
+                C3D_TexEnvInit(C3D_GetTexEnv(1));
+            }
+
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        };
+
+        auto setupSprEnv = [&]() {
+            C3D_TexBind(0, &sprTex[curTexIdx]);
+            C3D_TexEnv* sprEnv0 = C3D_GetTexEnv(0);
+            C3D_TexEnvInit(sprEnv0);
+            C3D_TexEnvSrc(sprEnv0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+            C3D_TexEnvFunc(sprEnv0, C3D_Both, GPU_REPLACE);
+
             C3D_TexEnvInit(C3D_GetTexEnv(1));
-        }
+
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+            C3D_AlphaTest(true, GPU_GREATER, 0);
+        };
 
         if(!isStereo) {
+            setupBgEnv();
             C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
-            C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0, 0);
+            C3D_RenderTargetClear(target, C3D_CLEAR_COLOR, 0, 0);
             C3D_FrameDrawOn(target);
             C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), gameScreen == 0 ? &projectionTop : &projectionBottom);
 
             drawQuad(x1, y1, x2, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
         } else {
-            C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_ALL, 0, 0);
-            C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_ALL, 0, 0);
+            C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_COLOR, 0, 0);
+            if(isStereoActive) {
+                C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_COLOR, 0, 0);
+            }
 
-            // Left Background
+            // ---------------- FASE 1: FONDOS (AMBOS OJOS) ----------------
+            setupBgEnv();
+
             C3D_FrameDrawOn(targetTopLeft);
             C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), &projectionTop);
             drawQuad(x1 - bgOffset, y1, x2 - bgOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
-            // Right Background
             C3D_FrameDrawOn(targetTopRight);
             C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), &projectionTop);
             drawQuad(x1 + bgOffset, y1, x2 + bgOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
-            // Sprites
-            if(sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame()) {
-                C3D_TexBind(0, &sprTex);
-                C3D_TexEnv* sprEnv0 = C3D_GetTexEnv(0);
-                C3D_TexEnvInit(sprEnv0);
-                C3D_TexEnvSrc(sprEnv0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-                C3D_TexEnvFunc(sprEnv0, C3D_Both, GPU_REPLACE);
-
-                C3D_TexEnvInit(C3D_GetTexEnv(1));
-
-                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+            // ---------------- FASE 2: SPRITES (AMBOS OJOS) ----------------
+            if(hasSprites) {
+                setupSprEnv();
                 C3D_AlphaTest(true, GPU_GREATER, 0);
 
-                // Left Sprites
+                // Dibujar Quad Sprites Ojo Izquierdo
                 C3D_FrameDrawOn(targetTopLeft);
                 drawQuad(x1 + sprOffset, y1, x2 + sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
-                // Right Sprites
+                // Dibujar Quad Sprites Ojo Derecho
                 C3D_FrameDrawOn(targetTopRight);
                 drawQuad(x1 - sprOffset, y1, x2 - sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
-                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
             }
+
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
         }
 
         // Draw the border.

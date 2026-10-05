@@ -24,8 +24,8 @@ static u8 temp2 = 0;
 
 #define SETPC(val) (this->registers.r16[R16_PC] = (val), this->advanceCycles(4))
 
-#define MEMREAD(addr) (temp1 = this->gameboy->mmu->read(addr), this->advanceCycles(4), temp1)
-#define MEMWRITE(addr, val) (this->gameboy->mmu->write(addr, val), this->advanceCycles(4))
+#define MEMREAD(addr) (temp1 = mmu->read(addr), this->advanceCycles(4), temp1)
+#define MEMWRITE(addr, val) (mmu->write(addr, val), this->advanceCycles(4))
 
 #define READPC8() MEMREAD(this->registers.r16[R16_PC]++)
 #define READPC16() (temp2 = READPC8(), temp2 | (READPC8() << 8))
@@ -38,9 +38,11 @@ static u8 temp2 = 0;
 
 CPU::CPU(Gameboy* gameboy) {
     this->gameboy = gameboy;
+    this->mmu = gameboy->mmu;
 }
 
 void CPU::reset() {
+    this->mmu = this->gameboy->mmu;
     this->cycleCount = 0;
     this->eventCycle = 0;
     memset(&this->registers, 0, sizeof(this->registers));
@@ -261,6 +263,8 @@ inline u8 CPU::rot(u8 func, u8 val) {
 }
 
 void CPU::run() {
+    MMU* const mmu = this->mmu;
+
     if(!this->haltState) {
         u8 op = READPC8();
 
@@ -291,14 +295,14 @@ void CPU::run() {
                                 break;
                             }
                             case 2: { // STOP
-                                u8 key1 = this->gameboy->mmu->readIO(KEY1);
+                                u8 key1 = mmu->readIO(KEY1);
                                 if(this->gameboy->gbMode == MODE_CGB && (key1 & 0x01) != 0) {
                                     bool doubleSpeed = (key1 & 0x80) == 0;
 
                                     this->gameboy->apu->setHalfSpeed(doubleSpeed);
                                     this->gameboy->ppu->setHalfSpeed(doubleSpeed);
 
-                                    this->gameboy->mmu->writeIO(KEY1, (u8) (key1 ^ 0x81));
+                                    mmu->writeIO(KEY1, (u8) (key1 ^ 0x81));
                                     this->registers.r16[R16_PC]++;
                                 } else {
                                     this->haltState = true;
@@ -506,7 +510,7 @@ void CPU::run() {
             }
             case 1: {
                 if(z == 6 && y == 6) { // HALT
-                    if(!this->ime && (this->gameboy->mmu->readIO(IF) & this->gameboy->mmu->readIO(IE) & 0x1F) != 0) {
+                    if(!this->ime && (mmu->readIO(IF) & mmu->readIO(IE) & 0x1F) != 0) {
                         if(this->gameboy->gbMode != MODE_CGB) {
                             this->haltBug = true;
                         }
@@ -764,7 +768,7 @@ void CPU::run() {
         this->advanceCycles(this->eventCycle - this->cycleCount);
     }
 
-    int triggered = this->gameboy->mmu->readIO(IF) & this->gameboy->mmu->readIO(IE);
+    int triggered = mmu->readIO(IF) & mmu->readIO(IE);
     if(triggered != 0) {
         this->haltState = false;
         if(this->ime) {
@@ -776,7 +780,7 @@ void CPU::run() {
 
             int irqNo = __builtin_ffs(triggered) - 1;
             this->registers.r16[R16_PC] = (u16) (0x40 + (irqNo << 3));
-            this->gameboy->mmu->writeIO(IF, (u8) (this->gameboy->mmu->readIO(IF) & ~(1 << irqNo)));
+            mmu->writeIO(IF, (u8) (mmu->readIO(IF) & ~(1 << irqNo)));
         }
     }
 }

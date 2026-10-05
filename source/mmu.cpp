@@ -181,14 +181,14 @@ u8 MMU::readSlow(u16 addr) {
     return 0xFF;
 }
 
-void MMU::write(u16 addr, u8 val) {
+void MMU::writeSlow(u16 addr, u8 val) {
     u8 area = (u8) (addr >> 12);
-    if(this->bankWriteFuncs[area] != NULL) {
+    if(this->bankWriteFuncs[area] != nullptr) {
         this->bankWriteFuncs[area](addr, val);
-    } else if(this->banks[area] != NULL) {
-        this->banks[area][addr & 0xFFF] = val;
+    } else if(this->banks[area] != nullptr) {
+        this->banks[area][addr & 0x0FFF] = val;
     } else {
-        if(this->gameboy->settings.printDebug != NULL) {
+        if(this->gameboy->settings.printDebug != nullptr) {
             this->gameboy->settings.printDebug("Attempted to write to unmapped memory bank: 0x%x\n", area);
         }
     }
