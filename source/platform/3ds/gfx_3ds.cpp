@@ -181,21 +181,13 @@ bool gfxInit() {
     sprBuffer = contiguousGfxMem + (256 * 256);
     memset(contiguousGfxMem, 0, 256 * 256 * sizeof(u32) * 2);
 
-    if(C3D_TexInit(&screenTex[0], 256, 256, GPU_RGBA8) && C3D_TexInit(&screenTex[1], 256, 256, GPU_RGBA8)) {
+    if(C3D_TexInitVRAM(&screenTex[0], 256, 256, GPU_RGBA8) && C3D_TexInitVRAM(&screenTex[1], 256, 256, GPU_RGBA8)) {
         screenInit = true;
-        memset(screenTex[0].data, 0, screenTex[0].size);
-        memset(screenTex[1].data, 0, screenTex[1].size);
-        GSPGPU_FlushDataCache(screenTex[0].data, screenTex[0].size);
-        GSPGPU_FlushDataCache(screenTex[1].data, screenTex[1].size);
     }
 
     sprTexInit = false;
-    if(C3D_TexInit(&sprTex[0], 256, 256, GPU_RGBA8) && C3D_TexInit(&sprTex[1], 256, 256, GPU_RGBA8)) {
+    if(C3D_TexInitVRAM(&sprTex[0], 256, 256, GPU_RGBA8) && C3D_TexInitVRAM(&sprTex[1], 256, 256, GPU_RGBA8)) {
         sprTexInit = true;
-        memset(sprTex[0].data, 0, sprTex[0].size);
-        memset(sprTex[1].data, 0, sprTex[1].size);
-        GSPGPU_FlushDataCache(sprTex[0].data, sprTex[0].size);
-        GSPGPU_FlushDataCache(sprTex[1].data, sprTex[1].size);
     }
 
     lcdGridInit = false;
@@ -419,14 +411,10 @@ void gfxDrawScreen() {
     }
 
     if(!screenInit) {
-        bool init0 = C3D_TexInit(&screenTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
-        bool init1 = C3D_TexInit(&screenTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
+        bool init0 = C3D_TexInitVRAM(&screenTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
+        bool init1 = C3D_TexInitVRAM(&screenTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
         if(init0 && init1) {
             screenInit = true;
-            memset(screenTex[0].data, 0, screenTex[0].size);
-            memset(screenTex[1].data, 0, screenTex[1].size);
-            GSPGPU_FlushDataCache(screenTex[0].data, screenTex[0].size);
-            GSPGPU_FlushDataCache(screenTex[1].data, screenTex[1].size);
         } else {
             if(init0) {
                 C3D_TexDelete(&screenTex[0]);
@@ -461,14 +449,10 @@ void gfxDrawScreen() {
 
     if(isStereo) {
         if(!sprTexInit) {
-            bool init0 = C3D_TexInit(&sprTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
-            bool init1 = C3D_TexInit(&sprTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
+            bool init0 = C3D_TexInitVRAM(&sprTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
+            bool init1 = C3D_TexInitVRAM(&sprTex[1], screenTexSize, screenTexSize, GPU_RGBA8);
             if(init0 && init1) {
                 sprTexInit = true;
-                memset(sprTex[0].data, 0, sprTex[0].size);
-                memset(sprTex[1].data, 0, sprTex[1].size);
-                GSPGPU_FlushDataCache(sprTex[0].data, sprTex[0].size);
-                GSPGPU_FlushDataCache(sprTex[1].data, sprTex[1].size);
             } else {
                 if(init0) {
                     C3D_TexDelete(&sprTex[0]);

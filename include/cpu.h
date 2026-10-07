@@ -94,8 +94,8 @@ public:
 private:
     void updateEvents();
 
-    void alu(u8 func, u8 val);
-    u8 rot(u8 func, u8 val);
+    __attribute__((always_inline)) inline void alu(u8 func, u8 val);
+    __attribute__((always_inline)) inline u8 rot(u8 func, u8 val);
 
     Gameboy* gameboy;
     MMU* mmu = nullptr;

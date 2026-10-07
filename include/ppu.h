@@ -115,7 +115,7 @@ private:
     u8 currSprites;
 
     u8 vram[2][0x2000];
-    u8 oam[0xA0];
+    u8 oam[0xA0] __attribute__((aligned(4)));
     u8 rawBgPalette[0x40];
     u8 rawSprPalette[0x40];
 

@@ -146,7 +146,7 @@ static const u8 cc[4] = {
 
 #define CHECK_CC(i) (FLAG_GET(cc[i]) ^ (~(i) & 1))
 
-inline void CPU::alu(u8 func, u8 val) {
+__attribute__((always_inline)) inline void CPU::alu(u8 func, u8 val) {
     u8 a = this->registers.r8[R8_A];
 
     u16 result = 0;
@@ -207,7 +207,7 @@ inline void CPU::alu(u8 func, u8 val) {
     }
 }
 
-inline u8 CPU::rot(u8 func, u8 val) {
+__attribute__((always_inline)) inline u8 CPU::rot(u8 func, u8 val) {
     u8 carry = 0;
     u8 result = 0;
 

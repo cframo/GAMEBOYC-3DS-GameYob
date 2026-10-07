@@ -76,20 +76,6 @@ static const u8 BitReverseTable256[] = {
         0x0F, 0x8F, 0x4F, 0xCF, 0x2F, 0xAF, 0x6F, 0xEF, 0x1F, 0x9F, 0x5F, 0xDF, 0x3F, 0xBF, 0x7F, 0xFF
 };
 
-// Tabla de desempaquetado rápido: para cada byte, sus 8 bits LSB-first separados (0 o 1).
-// bitExpandLut[byte][px] = (byte >> px) & 1
-static u8 bitExpandLut[256][8];
-static bool bitExpandLutInitialized = false;
-
-static void initBitExpandLut() {
-    for(int b = 0; b < 256; b++) {
-        for(int p = 0; p < 8; p++) {
-            bitExpandLut[b][p] = (u8) ((b >> p) & 1);
-        }
-    }
-    bitExpandLutInitialized = true;
-}
-
 extern int cgbColors;
 
 static u32 cgbColorLut[32768];
@@ -128,10 +114,6 @@ void PPU::initCgbColorLut() {
         }
 
         cgbLutInitialized = true;
-    }
-
-    if(!bitExpandLutInitialized) {
-        initBitExpandLut();
     }
 }
 
@@ -733,48 +715,46 @@ inline void PPU::updateLineSprites(u8 lcdc) {
     u8 height = (u8) (large ? 16 : 8);
 
     this->currSprites = 0;
-    u8* const oamPtr = this->oam;
+    const u32* const oamWords = (const u32*) this->oam;
 
-    for(u8 offset = 0; offset < 0xA0; offset += 4) {
-        u8 y = (u8) (oamPtr[offset + 0] - 16);
-        u8 ty = (u8) (ly - y);
-        if(ty >= height) {
-            continue;
-        }
+    for(int i = 0; i < 40; i++) {
+        u32 entry = oamWords[i];
+        int sprY = (int) (entry & 0xFF) - 16;
+        if(ly >= sprY && ly < sprY + height) {
+            SpriteLine* line = &this->currSpriteLines[this->currSprites];
 
-        SpriteLine* line = &this->currSpriteLines[this->currSprites];
+            line->x = (u8) (((entry >> 8) & 0xFF) - 8);
+            u8 tile = (u8) (((entry >> 16) & 0xFF) & ~((u8) large));
+            u8 flags = (u8) (entry >> 24);
 
-        line->x = (u8) (oamPtr[offset + 1] - 8);
-        u8 tile = (u8) (oamPtr[offset + 2] & ~((u8) large));
-        u8 flags = oamPtr[offset + 3];
+            line->palette = (u8) (flags & 7);
+            u8 bank = (u8) ((flags >> 3) & 1);
+            line->obp = (u8) ((flags >> 4) & 1);
+            u8 ty = (u8) (ly - sprY);
+            ty ^= (u8) (((flags >> 6) & 1) * (height - 1));
+            u8 depth = (u8) (2 - ((flags >> 6) & 2));
 
-        line->palette = (u8) (flags & 7);
-        u8 bank = (u8) ((flags >> 3) & 1);
-        line->obp = (u8) ((flags >> 4) & 1);
-        bool flipX = (bool) ((flags >> 5) & 1);
-        ty ^= (u8) (((flags >> 6) & 1) * (height - 1));
-        u8 depth = (u8) (2 - ((flags >> 6) & 2));
+            u16 pxOffset = (u16) ((tile << 4) + (ty << 1));
 
-        u16 pxOffset = (u16) ((tile << 4) + (ty << 1));
+            u8 b1 = this->vram[bank][pxOffset];
+            u8 b2 = this->vram[bank][pxOffset + 1];
 
-        u8 b1 = this->vram[bank][pxOffset];
-        u8 b2 = this->vram[bank][pxOffset + 1];
+            if((flags & 0x20) != 0) {
+                for(int bit = 0; bit < 8; bit++) {
+                    line->color[bit] = (u8) (((b1 >> bit) & 1) | (((b2 >> bit) & 1) << 1));
+                    line->depth[bit] = depth;
+                }
+            } else {
+                for(int bit = 0; bit < 8; bit++) {
+                    line->color[bit] = (u8) (((b1 >> (7 - bit)) & 1) | (((b2 >> (7 - bit)) & 1) << 1));
+                    line->depth[bit] = depth;
+                }
+            }
 
-        if(!flipX) {
-            b1 = BitReverseTable256[b1];
-            b2 = BitReverseTable256[b2];
-        }
-
-        const u8* const lut1 = bitExpandLut[b1];
-        const u8* const lut2 = bitExpandLut[b2];
-        for(u8 tx = 0; tx < 8; tx++) {
-            line->color[tx] = lut1[tx] | (u8) (lut2[tx] << 1);
-            line->depth[tx] = depth;
-        }
-
-        this->currSprites++;
-        if(this->currSprites >= 10) {
-            break;
+            this->currSprites++;
+            if(this->currSprites >= 10) {
+                break;
+            }
         }
     }
 }
