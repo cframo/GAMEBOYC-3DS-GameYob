@@ -1075,29 +1075,53 @@ inline void PPU::drawScanline(u8 scanline) {
                             SpriteLine* line = &this->currSpriteLines[spriteId];
                             const u32* const spritePalette = isCGB ? &baseSprPalette[line->palette << 2] : nullptr;
 
-                            for(u8 x = 0; x < 8; x++) {
-                                u8 pixelX = (u8) (line->x + x);
-                                if(pixelX >= 160) {
-                                    continue;
+                            if(line->x <= 152) {
+                                for(u8 x = 0; x < 8; x++) {
+                                    u8 pixelX = (u8) (line->x + x);
+                                    u8 colorId = line->color[x];
+                                    u8 depth = line->depth[x];
+                                    if(colorId != 0 && depth >= depthBuffer[pixelX]) {
+                                        depthBuffer[pixelX] = depth;
+
+                                        u32 outputColor;
+                                        if(isCGB) {
+                                            outputColor = spritePalette[colorId];
+                                        } else if(isSGB) {
+                                            u8 palette = line->palette + subSgbMap[pixelX >> 3];
+                                            outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        } else {
+                                            outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        }
+
+                                        sprLine[pixelX] = outputColor | 0x000000FF;
+                                        lineHasSprite = true;
+                                    }
                                 }
-
-                                u8 colorId = line->color[x];
-                                u8 depth = line->depth[x];
-                                if(colorId != 0 && depth >= depthBuffer[pixelX]) {
-                                    depthBuffer[pixelX] = depth;
-
-                                    u32 outputColor;
-                                    if(isCGB) {
-                                        outputColor = spritePalette[colorId];
-                                    } else if(isSGB) {
-                                        u8 palette = line->palette + subSgbMap[pixelX >> 3];
-                                        outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
-                                    } else {
-                                        outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                            } else {
+                                for(u8 x = 0; x < 8; x++) {
+                                    u8 pixelX = (u8) (line->x + x);
+                                    if(pixelX >= 160) {
+                                        continue;
                                     }
 
-                                    sprLine[pixelX] = outputColor | 0x000000FF;
-                                    lineHasSprite = true;
+                                    u8 colorId = line->color[x];
+                                    u8 depth = line->depth[x];
+                                    if(colorId != 0 && depth >= depthBuffer[pixelX]) {
+                                        depthBuffer[pixelX] = depth;
+
+                                        u32 outputColor;
+                                        if(isCGB) {
+                                            outputColor = spritePalette[colorId];
+                                        } else if(isSGB) {
+                                            u8 palette = line->palette + subSgbMap[pixelX >> 3];
+                                            outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        } else {
+                                            outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        }
+
+                                        sprLine[pixelX] = outputColor | 0x000000FF;
+                                        lineHasSprite = true;
+                                    }
                                 }
                             }
                         }
@@ -1117,6 +1141,82 @@ inline void PPU::drawScanline(u8 scanline) {
                             SpriteLine* line = &this->currSpriteLines[spriteId];
                             const u32* const spritePalette = isCGB ? &baseSprPalette[line->palette << 2] : nullptr;
 
+                            if(line->x <= 152) {
+                                for(u8 x = 0; x < 8; x++) {
+                                    u8 pixelX = (u8) (line->x + x);
+                                    u8 colorId = line->color[x];
+                                    u8 depth = line->depth[x];
+                                    if(colorId != 0 && depth >= depthBuffer[pixelX]) {
+                                        depthBuffer[pixelX] = depth;
+
+                                        u32 outputColor;
+                                        if(isCGB) {
+                                            outputColor = spritePalette[colorId];
+                                        } else if(isSGB) {
+                                            u8 palette = line->palette + subSgbMap[pixelX >> 3];
+                                            outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        } else {
+                                            outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        }
+
+                                        lineBuffer[pixelX] = outputColor;
+                                    }
+                                }
+                            } else {
+                                for(u8 x = 0; x < 8; x++) {
+                                    u8 pixelX = (u8) (line->x + x);
+                                    if(pixelX >= 160) {
+                                        continue;
+                                    }
+
+                                    u8 colorId = line->color[x];
+                                    u8 depth = line->depth[x];
+                                    if(colorId != 0 && depth >= depthBuffer[pixelX]) {
+                                        depthBuffer[pixelX] = depth;
+
+                                        u32 outputColor;
+                                        if(isCGB) {
+                                            outputColor = spritePalette[colorId];
+                                        } else if(isSGB) {
+                                            u8 palette = line->palette + subSgbMap[pixelX >> 3];
+                                            outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        } else {
+                                            outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                        }
+
+                                        lineBuffer[pixelX] = outputColor;
+                                    }
+                                }
+                            }
+                        }
+                    }
+#else
+                    for(s8 spriteId = (s8) (this->currSprites - 1); spriteId >= 0; spriteId--) {
+                        SpriteLine* line = &this->currSpriteLines[spriteId];
+                        const u32* const spritePalette = isCGB ? &baseSprPalette[line->palette << 2] : nullptr;
+
+                        if(line->x <= 152) {
+                            for(u8 x = 0; x < 8; x++) {
+                                u8 pixelX = (u8) (line->x + x);
+                                u8 colorId = line->color[x];
+                                u8 depth = line->depth[x];
+                                if(colorId != 0 && depth >= depthBuffer[pixelX]) {
+                                    depthBuffer[pixelX] = depth;
+
+                                    u32 outputColor;
+                                    if(isCGB) {
+                                        outputColor = spritePalette[colorId];
+                                    } else if(isSGB) {
+                                        u8 palette = line->palette + subSgbMap[pixelX >> 3];
+                                        outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                    } else {
+                                        outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
+                                    }
+
+                                    lineBuffer[pixelX] = outputColor;
+                                }
+                            }
+                        } else {
                             for(u8 x = 0; x < 8; x++) {
                                 u8 pixelX = (u8) (line->x + x);
                                 if(pixelX >= 160) {
@@ -1140,36 +1240,6 @@ inline void PPU::drawScanline(u8 scanline) {
 
                                     lineBuffer[pixelX] = outputColor;
                                 }
-                            }
-                        }
-                    }
-#else
-                    for(s8 spriteId = (s8) (this->currSprites - 1); spriteId >= 0; spriteId--) {
-                        SpriteLine* line = &this->currSpriteLines[spriteId];
-                        const u32* const spritePalette = isCGB ? &baseSprPalette[line->palette << 2] : nullptr;
-
-                        for(u8 x = 0; x < 8; x++) {
-                            u8 pixelX = (u8) (line->x + x);
-                            if(pixelX >= 160) {
-                                continue;
-                            }
-
-                            u8 colorId = line->color[x];
-                            u8 depth = line->depth[x];
-                            if(colorId != 0 && depth >= depthBuffer[pixelX]) {
-                                depthBuffer[pixelX] = depth;
-
-                                u32 outputColor;
-                                if(isCGB) {
-                                    outputColor = spritePalette[colorId];
-                                } else if(isSGB) {
-                                    u8 palette = line->palette + subSgbMap[pixelX >> 3];
-                                    outputColor = baseSprPalette[(palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
-                                } else {
-                                    outputColor = baseSprPalette[(line->palette << 2) + this->expandedObp[(line->obp << 2) + colorId]];
-                                }
-
-                                lineBuffer[pixelX] = outputColor;
                             }
                         }
                     }

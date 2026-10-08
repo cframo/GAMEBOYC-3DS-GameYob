@@ -480,7 +480,18 @@ void gfxDrawScreen() {
         // 1. Vaciado acotado de D-Cache a 144 líneas útiles (144 KiB en vez de 256 KiB)
         GSPGPU_FlushDataCache((u32*) screenBuffer + 40 * 256, 144 * 256 * sizeof(u32));
         if(isStereoActive && gameboy->getPPU()->hasSpritesThisFrame()) {
-            GSPGPU_FlushDataCache((u32*) sprBuffer + 40 * 256, 144 * 256 * sizeof(u32));
+            u8 sprMin = gameboy->getPPU()->getSprMinY();
+            u8 sprMax = gameboy->getPPU()->getSprMaxY();
+            u8 prevMin = gameboy->getPPU()->prevSprMinY;
+            u8 prevMax = gameboy->getPPU()->prevSprMaxY;
+
+            u8 startY = (sprMin < prevMin) ? sprMin : prevMin;
+            u8 endY   = (sprMax > prevMax) ? sprMax : prevMax;
+
+            if(startY <= endY && endY < 144) {
+                u32 lineCount = (endY - startY + 1);
+                GSPGPU_FlushDataCache((u32*) sprBuffer + (startY + 40) * 256, lineCount * 256 * sizeof(u32));
+            }
         }
 
         // 2. Despachar DMA sin bloqueo inmediato
