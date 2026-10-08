@@ -53,7 +53,7 @@ COMMON_FLAGS := $(ARCH) $(BUILD_FLAGS) $(VERSION_DEFS) $(INCLUDES) -Wall -Wforma
 CFLAGS       := $(COMMON_FLAGS) -std=gnu11
 CXXFLAGS     := $(COMMON_FLAGS) -std=gnu++11 -fno-rtti -fno-exceptions
 ASFLAGS      := $(ARCH) $(INCLUDES)
-LDFLAGS      := -specs=3dsx.specs $(ARCH) $(LIBPATHS) $(LIBS)
+LDFLAGS      := $(LDFLAGS) -specs=3dsx.specs $(ARCH)
 
 # Rastreo recursivo de archivos fuente
 # Filtrar plataformas ajenas (Switch y SDL/PC)
@@ -90,7 +90,7 @@ $(SMDH):
 $(ELF): $(OBJS)
 	@mkdir -p $(OUTPUT_DIR)
 	@echo "--- Enlazando ELF: $@ ---"
-	$(LD) $(ARCH) -specs=3dsx.specs -o $@ $(OBJS) $(LIBPATHS) $(LIBS)
+	$(LD) $(LDFLAGS) -o $@ $(OBJS) $(LIBPATHS) $(LIBS)
 
 $(OBJS): $(SHBIN_HEADERS) $(SHBINS)
 

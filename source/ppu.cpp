@@ -739,16 +739,24 @@ inline void PPU::updateLineSprites(u8 lcdc) {
             u8 b1 = this->vram[bank][pxOffset];
             u8 b2 = this->vram[bank][pxOffset + 1];
 
-            if((flags & 0x20) != 0) {
-                for(int bit = 0; bit < 8; bit++) {
-                    line->color[bit] = (u8) (((b1 >> bit) & 1) | (((b2 >> bit) & 1) << 1));
-                    line->depth[bit] = depth;
-                }
-            } else {
-                for(int bit = 0; bit < 8; bit++) {
-                    line->color[bit] = (u8) (((b1 >> (7 - bit)) & 1) | (((b2 >> (7 - bit)) & 1) << 1));
-                    line->depth[bit] = depth;
-                }
+            if((flags & 0x20) != 0) { // Flip horizontal
+                line->color[0] = (u8) (((b1 >> 0) & 1) | (((b2 >> 0) & 1) << 1)); line->depth[0] = depth;
+                line->color[1] = (u8) (((b1 >> 1) & 1) | (((b2 >> 1) & 1) << 1)); line->depth[1] = depth;
+                line->color[2] = (u8) (((b1 >> 2) & 1) | (((b2 >> 2) & 1) << 1)); line->depth[2] = depth;
+                line->color[3] = (u8) (((b1 >> 3) & 1) | (((b2 >> 3) & 1) << 1)); line->depth[3] = depth;
+                line->color[4] = (u8) (((b1 >> 4) & 1) | (((b2 >> 4) & 1) << 1)); line->depth[4] = depth;
+                line->color[5] = (u8) (((b1 >> 5) & 1) | (((b2 >> 5) & 1) << 1)); line->depth[5] = depth;
+                line->color[6] = (u8) (((b1 >> 6) & 1) | (((b2 >> 6) & 1) << 1)); line->depth[6] = depth;
+                line->color[7] = (u8) (((b1 >> 7) & 1) | (((b2 >> 7) & 1) << 1)); line->depth[7] = depth;
+            } else { // Normal
+                line->color[0] = (u8) (((b1 >> 7) & 1) | (((b2 >> 7) & 1) << 1)); line->depth[0] = depth;
+                line->color[1] = (u8) (((b1 >> 6) & 1) | (((b2 >> 6) & 1) << 1)); line->depth[1] = depth;
+                line->color[2] = (u8) (((b1 >> 5) & 1) | (((b2 >> 5) & 1) << 1)); line->depth[2] = depth;
+                line->color[3] = (u8) (((b1 >> 4) & 1) | (((b2 >> 4) & 1) << 1)); line->depth[3] = depth;
+                line->color[4] = (u8) (((b1 >> 3) & 1) | (((b2 >> 3) & 1) << 1)); line->depth[4] = depth;
+                line->color[5] = (u8) (((b1 >> 2) & 1) | (((b2 >> 2) & 1) << 1)); line->depth[5] = depth;
+                line->color[6] = (u8) (((b1 >> 1) & 1) | (((b2 >> 1) & 1) << 1)); line->depth[6] = depth;
+                line->color[7] = (u8) (((b1 >> 0) & 1) | (((b2 >> 0) & 1) << 1)); line->depth[7] = depth;
             }
 
             this->currSprites++;

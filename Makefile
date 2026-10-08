@@ -11,7 +11,8 @@ OUTPUT_DIR := output
 INCLUDE_DIRS := include
 SOURCE_DIRS := source
 
-BUILD_FLAGS := -O3 -Wall -fomit-frame-pointer -fno-strict-aliasing -DBLIP_BUFFER_FAST=1 -DNDEBUG -marm
+BUILD_FLAGS := -O3 -flto -Wall -fomit-frame-pointer -fno-strict-aliasing -DBLIP_BUFFER_FAST=1 -DNDEBUG -marm
+LDFLAGS     := -O3 -flto -Wno-stringop-overflow
 
 VERSION_PARTS := $(subst ., ,$(shell git describe --tags --abbrev=0 --match="[0-9]*"))
 

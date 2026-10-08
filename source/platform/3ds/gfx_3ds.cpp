@@ -474,23 +474,16 @@ void gfxDrawScreen() {
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
     bool hasSprites = isStereoActive && sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame();
+    bool dmaDispatched = false;
 
     if(screenTex[curTexIdx].data != nullptr) {
-        // Vaciar exclusivamente las 144 líneas útiles de screenBuffer
+        // 1. Vaciado acotado de D-Cache a 144 líneas útiles (144 KiB en vez de 256 KiB)
         GSPGPU_FlushDataCache((u32*) screenBuffer + 40 * 256, 144 * 256 * sizeof(u32));
-
-        // Si el modo 3D y los sprites están activos, vaciar únicamente las líneas sucias delimitadas
-        if(hasSprites) {
-            u8 sprMinY = gameboy->getPPU()->getSprMinY();
-            u8 sprMaxY = gameboy->getPPU()->getSprMaxY();
-            u8 clearStart = (sprMinY < gameboy->getPPU()->prevSprMinY) ? sprMinY : gameboy->getPPU()->prevSprMinY;
-            u8 clearEnd = (sprMaxY > gameboy->getPPU()->prevSprMaxY) ? sprMaxY : gameboy->getPPU()->prevSprMaxY;
-            if(clearStart <= clearEnd && clearEnd < 144) {
-                u32 flushSize = (u32) (clearEnd - clearStart + 1) * 256 * sizeof(u32);
-                GSPGPU_FlushDataCache((u32*) sprBuffer + ((u32) clearStart + 40) * 256, flushSize);
-            }
+        if(isStereoActive && gameboy->getPPU()->hasSpritesThisFrame()) {
+            GSPGPU_FlushDataCache((u32*) sprBuffer + 40 * 256, 144 * 256 * sizeof(u32));
         }
 
+        // 2. Despachar DMA sin bloqueo inmediato
         GX_DisplayTransfer(
             (u32*) screenBuffer, GX_BUFFER_DIM(256, 256),
             (u32*) screenTex[curTexIdx].data, GX_BUFFER_DIM(256, 256),
@@ -505,11 +498,33 @@ void gfxDrawScreen() {
             );
         }
 
-        gspWaitForPPF();
+        dmaDispatched = true;
     }
 
     if(!C3D_FrameBegin(0)) {
+        if(dmaDispatched) {
+            gspWaitForPPF();
+        }
         return;
+    }
+
+    // 3. MIENTRAS el DMA transfiere en hardware, la CPU ejecuta el setup y clear normal de Citro3D
+    if(!isStereo) {
+        C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
+        C3D_FrameDrawOn(target);
+        C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0, 0);
+    } else {
+        C3D_FrameDrawOn(targetTopLeft);
+        C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_ALL, 0, 0);
+        if(isStereoActive) {
+            C3D_FrameDrawOn(targetTopRight);
+            C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_ALL, 0, 0);
+        }
+    }
+
+    // 4. Sincronización diferida
+    if(dmaDispatched) {
+        gspWaitForPPF();
     }
 
     u16 viewportWidth = (gameScreen == 0 ? targetTopLeft : targetBottom)->frameBuf.height;
@@ -650,17 +665,11 @@ void gfxDrawScreen() {
         if(!isStereo) {
             setupBgEnv();
             C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
-            C3D_RenderTargetClear(target, C3D_CLEAR_COLOR, 0, 0);
             C3D_FrameDrawOn(target);
             C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), gameScreen == 0 ? &projectionTop : &projectionBottom);
 
             drawQuad(x1, y1, x2, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
         } else {
-            C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_COLOR, 0, 0);
-            if(isStereoActive) {
-                C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_COLOR, 0, 0);
-            }
-
             // ---------------- FASE 1: FONDOS (AMBOS OJOS) ----------------
             setupBgEnv();
 
