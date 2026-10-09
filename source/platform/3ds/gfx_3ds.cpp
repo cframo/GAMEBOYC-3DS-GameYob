@@ -16,10 +16,18 @@
 #include "platform/3ds/default_shbin.h"
 #include "platform/common/manager.h"
 #include "platform/common/menu.h"
+#include "platform/common/menu/filechooser.h"
 #include "platform/gfx.h"
 #include "platform/system.h"
 
 static bool c3dInitialized;
+
+static inline bool isBottomUIOrTouchActive() {
+    return menuOn || isFileChooserActive() || ((hidKeysHeld() & KEY_TOUCH) != 0);
+}
+
+static u32 bottomFrameCount = 0;
+static bool bottomScreenDirty = true;
 
 static bool shaderInitialized;
 static DVLB_s* dvlb;
@@ -520,16 +528,31 @@ void gfxDrawScreen() {
     }
 
     // 3. MIENTRAS el DMA transfiere en hardware, la CPU ejecuta el setup y clear normal de Citro3D
+    bool renderTarget = true;
     if(!isStereo) {
         C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
-        C3D_FrameDrawOn(target);
-        C3D_RenderTargetClear(target, C3D_CLEAR_ALL, 0, 0);
+        if(target == targetBottom) {
+            if(isBottomUIOrTouchActive()) {
+                bottomScreenDirty = true;
+                renderTarget = true;
+            } else if(bottomScreenDirty) {
+                bottomScreenDirty = false;
+                renderTarget = true;
+            } else {
+                renderTarget = ((++bottomFrameCount % 4) == 0);
+            }
+        }
+
+        if(renderTarget) {
+            C3D_FrameDrawOn(target);
+            C3D_RenderTargetClear(target, C3D_CLEAR_COLOR, 0, 0);
+        }
     } else {
         C3D_FrameDrawOn(targetTopLeft);
-        C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_ALL, 0, 0);
+        C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_COLOR, 0, 0);
         if(isStereoActive) {
             C3D_FrameDrawOn(targetTopRight);
-            C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_ALL, 0, 0);
+            C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_COLOR, 0, 0);
         }
     }
 
@@ -674,12 +697,14 @@ void gfxDrawScreen() {
         };
 
         if(!isStereo) {
-            setupBgEnv();
-            C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
-            C3D_FrameDrawOn(target);
-            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), gameScreen == 0 ? &projectionTop : &projectionBottom);
+            if(renderTarget) {
+                setupBgEnv();
+                C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
+                C3D_FrameDrawOn(target);
+                C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), gameScreen == 0 ? &projectionTop : &projectionBottom);
 
-            drawQuad(x1, y1, x2, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1, y1, x2, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+            }
         } else {
             // ---------------- FASE 1: FONDOS (AMBOS OJOS) ----------------
             setupBgEnv();
@@ -750,9 +775,11 @@ void gfxDrawScreen() {
             C3D_TexBind(0, &borderTexture);
 
             if(!isStereo) {
-                C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
-                C3D_FrameDrawOn(target);
-                drawQuad(bx1, by1, bx2, by2, 0.0f, 0.0f, tx2, ty2, 0.0f, 0.0f, 0.0f, 0.0f);
+                if(renderTarget) {
+                    C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
+                    C3D_FrameDrawOn(target);
+                    drawQuad(bx1, by1, bx2, by2, 0.0f, 0.0f, tx2, ty2, 0.0f, 0.0f, 0.0f, 0.0f);
+                }
             } else {
                 C3D_FrameDrawOn(targetTopLeft);
                 drawQuad(bx1, by1, bx2, by2, 0.0f, 0.0f, tx2, ty2, 0.0f, 0.0f, 0.0f, 0.0f);
