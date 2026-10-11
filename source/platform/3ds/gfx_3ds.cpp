@@ -690,7 +690,19 @@ void gfxDrawScreen() {
             C3D_TexEnvSrc(sprEnv0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
             C3D_TexEnvFunc(sprEnv0, C3D_Both, GPU_REPLACE);
 
-            C3D_TexEnvInit(C3D_GetTexEnv(1));
+            if(lcdActive) {
+                C3D_TexBind(1, &lcdGridTexture);
+                C3D_TexEnv* env1 = C3D_GetTexEnv(1);
+                C3D_TexEnvInit(env1);
+                C3D_TexEnvSrc(env1, C3D_RGB, GPU_PREVIOUS, GPU_TEXTURE1, (GPU_TEVSRC)0);
+                C3D_TexEnvOpRgb(env1, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, (GPU_TEVOP_RGB)0);
+                C3D_TexEnvFunc(env1, C3D_RGB, GPU_MODULATE);
+                C3D_TexEnvSrc(env1, C3D_Alpha, GPU_PREVIOUS, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvOpAlpha(env1, GPU_TEVOP_A_SRC_ALPHA, (GPU_TEVOP_A)0, (GPU_TEVOP_A)0);
+                C3D_TexEnvFunc(env1, C3D_Alpha, GPU_REPLACE);
+            } else {
+                C3D_TexEnvInit(C3D_GetTexEnv(1));
+            }
 
             C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
             C3D_AlphaTest(true, GPU_GREATER, 0);
