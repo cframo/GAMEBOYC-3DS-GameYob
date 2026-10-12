@@ -398,7 +398,7 @@ SubMenu menuList[] = {
                 {
                         {"Game Screen", setScreenFunc, 2, {"Top", "Bottom"}, 0},
                         {"Scaling", setScaleModeFunc, 5, {"Off", "125%", "150%", "Aspect", "Full"}, 0},
-                        {"Scale Filter", setScaleFilterFunc, 2, {"Nearest", "Linear"}, 0},
+                        {"Scale Filter", setScaleFilterFunc, 3, {"Off", "Linear", "Sharp"}, 0},
                         {"LCD Grid", setLcdGridFunc, 2, {"Off", "On"}, 0},
                         {"CGB Colors", setCgbColorsFunc, 2, {"Raw", "Accurate"}, 0},
                         {"FF Frame Skip", setFastForwardFrameSkipFunc, 4, {"0", "1", "2", "3"}, 3},

@@ -39,6 +39,12 @@ static C3D_RenderTarget* targetBottom = nullptr;
 static C3D_Mtx projectionTop;
 static C3D_Mtx projectionBottom;
 
+static bool rttInit = false;
+static C3D_Tex rttTex;
+static C3D_RenderTarget* rttTarget = nullptr;
+static C3D_Mtx projectionRtt;
+static int uLocProjection = 0;
+
 static bool screenInit;
 static C3D_Tex screenTex[2];
 static int curTexIdx = 0;
@@ -152,6 +158,7 @@ bool gfxInit() {
     }
 
     C3D_BindProgram(&program);
+    uLocProjection = shaderInstanceGetUniformLocation(program.vertexShader, "projection");
 
     C3D_AttrInfo* attrInfo = C3D_GetAttrInfo();
     if(attrInfo == NULL) {
@@ -175,9 +182,11 @@ bool gfxInit() {
     C3D_TexEnvFunc(env, C3D_Both, GPU_REPLACE);
 
     C3D_DepthTest(true, GPU_GEQUAL, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
 
     Mtx_OrthoTilt(&projectionTop, 0.0, 400.0, 240.0, 0.0, 0.0, 1.0, true);
     Mtx_OrthoTilt(&projectionBottom, 0.0, 320.0, 240.0, 0.0, 0.0, 1.0, true);
+    Mtx_Ortho(&projectionRtt, 0.0f, 512.0f, 512.0f, 0.0f, 0.0f, 1.0f, true);
 
     screenInit = false;
     borderInit = false;
@@ -196,6 +205,16 @@ bool gfxInit() {
     sprTexInit = false;
     if(C3D_TexInitVRAM(&sprTex[0], 256, 256, GPU_RGBA8) && C3D_TexInitVRAM(&sprTex[1], 256, 256, GPU_RGBA8)) {
         sprTexInit = true;
+    }
+
+    rttInit = false;
+    if(C3D_TexInitVRAM(&rttTex, 512, 512, GPU_RGBA8)) {
+        rttTarget = C3D_RenderTargetCreateFromTex(&rttTex, GPU_TEXFACE_2D, 0, (C3D_DEPTHTYPE)-1);
+        if(rttTarget != nullptr) {
+            rttInit = true;
+        } else {
+            C3D_TexDelete(&rttTex);
+        }
     }
 
     lcdGridInit = false;
@@ -280,6 +299,16 @@ void gfxCleanup() {
     if(targetBottom != nullptr) {
         C3D_RenderTargetDelete(targetBottom);
         targetBottom = nullptr;
+    }
+
+    if(rttTarget != nullptr) {
+        C3D_RenderTargetDelete(rttTarget);
+        rttTarget = nullptr;
+    }
+
+    if(rttInit) {
+        C3D_TexDelete(&rttTex);
+        rttInit = false;
     }
 
     if(c3dInitialized) {
@@ -417,6 +446,18 @@ void gfxDrawScreen() {
     if(scaleMode != 0 && scaleFilter == 1) {
         filter = GPU_LINEAR;
     }
+
+    if(scaleFilter == 2 && scaleMode != 0 && !rttInit) {
+        if(C3D_TexInitVRAM(&rttTex, 512, 512, GPU_RGBA8)) {
+            rttTarget = C3D_RenderTargetCreateFromTex(&rttTex, GPU_TEXFACE_2D, 0, (C3D_DEPTHTYPE)-1);
+            if(rttTarget != nullptr) {
+                rttInit = true;
+            } else {
+                C3D_TexDelete(&rttTex);
+            }
+        }
+    }
+    bool useRtt = (scaleFilter == 2 && scaleMode != 0 && rttInit);
 
     if(!screenInit) {
         bool init0 = C3D_TexInitVRAM(&screenTex[0], screenTexSize, screenTexSize, GPU_RGBA8);
@@ -652,21 +693,78 @@ void gfxDrawScreen() {
         const float bgOffset = slider * 2.0f;
         const float sprOffset = slider * 2.5f;
 
-        auto setupBgEnv = [&]() {
+        const float rttW = hasCustomBorder ? 512.0f : 320.0f;
+        const float rttH = hasCustomBorder ? 448.0f : 288.0f;
+
+        float ru1 = 0.0f;
+        float rv1 = 0.0f;
+        float ru2 = rttW / 512.0f;
+        float rv2 = rttH / 512.0f;
+
+        if(useRtt) {
+            const float rttFilterMod = 0.25f / 512.0f;
+            ru1 = 0.0f + rttFilterMod;
+            ru2 = (rttW / 512.0f) - rttFilterMod;
+            rv1 = 1.0f - rttFilterMod;
+            rv2 = ((512.0f - rttH) / 512.0f) + rttFilterMod;
+
+            // FASE 1: Renderizado al Target Intermedio en VRAM (Integer 2x Nearest)
+            C3D_FrameDrawOn(rttTarget);
+            C3D_RenderTargetClear(rttTarget, C3D_CLEAR_COLOR, 0, 0);
+            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionRtt);
+
             C3D_TexBind(0, &screenTex[curTexIdx]);
-            C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-            C3D_TexEnvInit(env0);
+            C3D_TexEnv* rttEnv0 = C3D_GetTexEnv(0);
+            C3D_TexEnvInit(rttEnv0);
 
             if(blurActive) {
                 C3D_TexBind(2, &screenTex[curTexIdx ^ 1]);
-                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
-                C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
-                C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
-                C3D_TexEnvFunc(env0, C3D_Both, GPU_INTERPOLATE);
-                C3D_TexEnvColor(env0, 0xA8A8A8A8);
+                C3D_TexEnvSrc(rttEnv0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
+                C3D_TexEnvOpRgb(rttEnv0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+                C3D_TexEnvOpAlpha(rttEnv0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+                C3D_TexEnvFunc(rttEnv0, C3D_Both, GPU_INTERPOLATE);
+                C3D_TexEnvColor(rttEnv0, 0xA8A8A8A8);
             } else {
+                C3D_TexEnvSrc(rttEnv0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(rttEnv0, C3D_Both, GPU_REPLACE);
+            }
+
+            C3D_TexEnvInit(C3D_GetTexEnv(1));
+            C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_ONE, GPU_ZERO, GPU_ONE, GPU_ZERO);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+            C3D_CullFace(GPU_CULL_NONE);
+
+            drawQuad(0.0f, 0.0f, rttW, rttH, u1, v1, u2, v2, 0.0f, 0.0f, 0.0f, 0.0f);
+
+            C3D_FrameSplit(0);
+        }
+
+        auto setupBgEnv = [&]() {
+            if(useRtt) {
+                C3D_TexSetFilter(&rttTex, GPU_LINEAR, GPU_LINEAR);
+                C3D_TexSetWrap(&rttTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+                C3D_TexBind(0, &rttTex);
+
+                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+                C3D_TexEnvInit(env0);
                 C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
                 C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+            } else {
+                C3D_TexBind(0, &screenTex[curTexIdx]);
+                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+                C3D_TexEnvInit(env0);
+
+                if(blurActive) {
+                    C3D_TexBind(2, &screenTex[curTexIdx ^ 1]);
+                    C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_TEXTURE2, GPU_CONSTANT);
+                    C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR, GPU_TEVOP_RGB_SRC_COLOR);
+                    C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA, GPU_TEVOP_A_SRC_ALPHA);
+                    C3D_TexEnvFunc(env0, C3D_Both, GPU_INTERPOLATE);
+                    C3D_TexEnvColor(env0, 0xA8A8A8A8);
+                } else {
+                    C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+                }
             }
 
             if(lcdActive) {
@@ -708,26 +806,31 @@ void gfxDrawScreen() {
             C3D_AlphaTest(true, GPU_GREATER, 0);
         };
 
+        const float cu1 = useRtt ? ru1 : u1;
+        const float cv1 = useRtt ? rv1 : v1;
+        const float cu2 = useRtt ? ru2 : u2;
+        const float cv2 = useRtt ? rv2 : v2;
+
         if(!isStereo) {
             if(renderTarget) {
                 setupBgEnv();
                 C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
                 C3D_FrameDrawOn(target);
-                C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), gameScreen == 0 ? &projectionTop : &projectionBottom);
+                C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, gameScreen == 0 ? &projectionTop : &projectionBottom);
 
-                drawQuad(x1, y1, x2, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1, y1, x2, y2, cu1, cv1, cu2, cv2, gu1, gv1, gu2, gv2);
             }
         } else {
             // ---------------- FASE 1: FONDOS (AMBOS OJOS) ----------------
             setupBgEnv();
 
             C3D_FrameDrawOn(targetTopLeft);
-            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), &projectionTop);
-            drawQuad(x1 - bgOffset, y1, x2 - bgOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionTop);
+            drawQuad(x1 - bgOffset, y1, x2 - bgOffset, y2, cu1, cv1, cu2, cv2, gu1, gv1, gu2, gv2);
 
             C3D_FrameDrawOn(targetTopRight);
-            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaderInstanceGetUniformLocation(program.vertexShader, "projection"), &projectionTop);
-            drawQuad(x1 + bgOffset, y1, x2 + bgOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+            C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionTop);
+            drawQuad(x1 + bgOffset, y1, x2 + bgOffset, y2, cu1, cv1, cu2, cv2, gu1, gv1, gu2, gv2);
 
             // ---------------- FASE 2: SPRITES (AMBOS OJOS) ----------------
             if(hasSprites) {
@@ -736,11 +839,11 @@ void gfxDrawScreen() {
 
                 // Dibujar Quad Sprites Ojo Izquierdo
                 C3D_FrameDrawOn(targetTopLeft);
-                drawQuad(x1 + sprOffset, y1, x2 + sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1 - sprOffset, y1, x2 - sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
                 // Dibujar Quad Sprites Ojo Derecho
                 C3D_FrameDrawOn(targetTopRight);
-                drawQuad(x1 - sprOffset, y1, x2 - sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1 + sprOffset, y1, x2 + sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
             }
