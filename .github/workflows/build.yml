@@ -1,0 +1,36 @@
+name: Build GameYob 3DS
+
+on:
+  push:
+    branches: [ master ]
+  pull_request:
+    branches: [ master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+
+    steps:
+      - name: Checkout repositorio
+        uses: actions/checkout@v4
+
+      - name: Permisos de ejecución
+        run: chmod +x ./dkp-make
+
+      - name: Compilación limpia del core y frontend
+        run: |
+          ./dkp-make clean || rm -rf build output
+          ./dkp-make
+
+      - name: Verificar artefactos generados
+        run: |
+          test -s output/GameYob.3dsx || { echo "[-] GameYob.3dsx no generado o vacío"; exit 1; }
+          test -s output/GameYob.smdh || { echo "[-] GameYob.smdh no generado o vacío"; exit 1; }
+          echo "[+] Artefactos generados exitosamente."
+
+      - name: Subir artefacto compilado
+        uses: actions/upload-artifact@v4
+        with:
+          name: GameYob-3DSX
+          path: output/GameYob.3dsx
