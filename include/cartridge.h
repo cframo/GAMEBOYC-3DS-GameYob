@@ -35,6 +35,7 @@ public:
     void saveState(std::ostream &data);
 
     void update();
+    void updateClock();
 
     void save(std::ostream& data);
     void loadSave(std::istream& saveData, int saveSize);
@@ -118,7 +119,6 @@ private:
     void camTakePicture();
 
     void latchClock();
-    void updateClock();
 
     typedef void (Cartridge::*mbcWrite)(u16, u8);
     typedef u8 (Cartridge::*mbcRead)(u16);

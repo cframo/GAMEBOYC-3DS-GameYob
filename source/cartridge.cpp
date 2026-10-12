@@ -592,6 +592,12 @@ void Cartridge::mapRomBank1() {
 }
 
 void Cartridge::mapSramBank() {
+    if(this->mbcType == MBC3 && this->sramBank >= 0x08 && this->sramBank <= 0x0C) {
+        this->gameboy->mmu->mapBankBlock(0xA, nullptr);
+        this->gameboy->mmu->mapBankBlock(0xB, nullptr);
+        return;
+    }
+
     s32 bank = this->sramBank & (this->totalRamBanks - 1);
     if(bank >= 0 && bank < this->totalRamBanks) {
         u8* bankPtr = &this->sram[bank * 0x2000];
