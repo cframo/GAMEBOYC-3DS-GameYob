@@ -839,11 +839,11 @@ void gfxDrawScreen() {
 
                 // Dibujar Quad Sprites Ojo Izquierdo
                 C3D_FrameDrawOn(targetTopLeft);
-                drawQuad(x1 - sprOffset, y1, x2 - sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1 + sprOffset, y1, x2 + sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
                 // Dibujar Quad Sprites Ojo Derecho
                 C3D_FrameDrawOn(targetTopRight);
-                drawQuad(x1 + sprOffset, y1, x2 + sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
+                drawQuad(x1 - sprOffset, y1, x2 - sprOffset, y2, u1, v1, u2, v2, gu1, gv1, gu2, gv2);
 
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
             }

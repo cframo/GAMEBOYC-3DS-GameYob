@@ -17,6 +17,8 @@
 #include "platform/common/menu.h"
 #include "platform/audio.h"
 #include "platform/gfx.h"
+#include "cartridge.h"
+#include "gameboy.h"
 #include "platform/input.h"
 #include "platform/system.h"
 #include "platform/ui.h"
@@ -37,8 +39,13 @@ static void onAptHook(APT_HookType hook, void* param) {
         case APTHOOK_ONSLEEP:
             break;
         case APTHOOK_ONRESTORE:
-        case APTHOOK_ONWAKEUP:
+        case APTHOOK_ONWAKEUP: {
+            extern Gameboy* gameboy;
+            if(gameboy != nullptr && gameboy->cartridge != nullptr) {
+                gameboy->cartridge->updateClock();
+            }
             break;
+        }
         case APTHOOK_ONEXIT:
             aptActive = false;
             requestedExit = true;
