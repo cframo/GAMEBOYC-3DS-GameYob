@@ -19,6 +19,7 @@
 #include "platform/common/menu/filechooser.h"
 #include "platform/gfx.h"
 #include "platform/system.h"
+#include "platform/3ds/ui_renderer.h"
 
 static bool c3dInitialized;
 
@@ -36,6 +37,7 @@ static shaderProgram_s program;
 static C3D_RenderTarget* targetTopLeft = nullptr;
 static C3D_RenderTarget* targetTopRight = nullptr;
 static C3D_RenderTarget* targetBottom = nullptr;
+static int s_bottomClearCount = 2;
 static C3D_Mtx projectionTop;
 static C3D_Mtx projectionBottom;
 
@@ -104,7 +106,7 @@ bool gfxInit() {
     gfxSet3D(true);
     gfxInitialized = true;
 
-    if(!C3D_Init(C3D_DEFAULT_CMDBUF_SIZE)) {
+    if(!C3D_Init(0x80000)) {
         gfxCleanup();
         return false;
     }
@@ -129,7 +131,7 @@ bool gfxInit() {
 
     C3D_RenderTargetSetOutput(targetTopRight, GFX_TOP, GFX_RIGHT, displayFlags);
 
-    targetBottom = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, 0);
+    targetBottom = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, (C3D_DEPTHTYPE)-1);
     if(targetBottom == nullptr) {
         gfxCleanup();
         return false;
@@ -244,6 +246,8 @@ bool gfxInit() {
         C3D_TexSetFilter(&lcdGridTexture, GPU_LINEAR, GPU_LINEAR);
     }
 
+    uiRenderInit();
+
     return true;
 }
 
@@ -310,6 +314,8 @@ void gfxCleanup() {
         C3D_TexDelete(&rttTex);
         rttInit = false;
     }
+
+    uiRenderExit();
 
     if(c3dInitialized) {
         C3D_Fini();
@@ -522,13 +528,14 @@ void gfxDrawScreen() {
                        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO);
 
-    bool hasSprites = isStereoActive && sprTexInit && gameboy != nullptr && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame();
+    bool hasGame = (gameboy != nullptr && gameboy->isPoweredOn());
+    bool hasSprites = hasGame && isStereoActive && sprTexInit && gameboy->getPPU() != nullptr && gameboy->getPPU()->hasSpritesThisFrame();
     bool dmaDispatched = false;
 
-    if(screenTex[curTexIdx].data != nullptr) {
+    if(hasGame && screenTex[curTexIdx].data != nullptr) {
         // 1. Vaciado acotado de D-Cache a 144 líneas útiles (144 KiB en vez de 256 KiB)
         GSPGPU_FlushDataCache((u32*) screenBuffer + 40 * 256, 144 * 256 * sizeof(u32));
-        if(isStereoActive && gameboy->getPPU()->hasSpritesThisFrame()) {
+        if(hasSprites) {
             u8 sprMin = gameboy->getPPU()->getSprMinY();
             u8 sprMax = gameboy->getPPU()->getSprMaxY();
             u8 prevMin = gameboy->getPPU()->prevSprMinY;
@@ -568,8 +575,17 @@ void gfxDrawScreen() {
         return;
     }
 
-    // 3. MIENTRAS el DMA transfiere en hardware, la CPU ejecuta el setup y clear normal de Citro3D
-    bool renderTarget = true;
+    if(!hasGame) {
+        // No hay juego cargado: limpiar targetTopLeft (y targetTopRight si 3D activo) con color de fondo oscuro
+        C3D_FrameDrawOn(targetTopLeft);
+        C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_ALL, 0x121317FF, 0);
+        if(isStereoActive) {
+            C3D_FrameDrawOn(targetTopRight);
+            C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_ALL, 0x121317FF, 0);
+        }
+    } else {
+        // 3. MIENTRAS el DMA transfiere en hardware, la CPU ejecuta el setup y clear normal de Citro3D
+        bool renderTarget = true;
     if(!isStereo) {
         C3D_RenderTarget* target = (gameScreen != 0) ? targetBottom : targetTopLeft;
         if(target == targetBottom) {
@@ -903,6 +919,27 @@ void gfxDrawScreen() {
                 drawQuad(bx1, by1, bx2, by2, 0.0f, 0.0f, tx2, ty2, 0.0f, 0.0f, 0.0f, 0.0f);
             }
         }
+    }
+    }
+
+    if(!menuOn && !isFileChooserActive()) {
+        if(gameScreen == 0 && s_bottomClearCount > 0) {
+            C3D_FrameDrawOn(targetBottom);
+            C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x000000FF, 0);
+            s_bottomClearCount--;
+        }
+    } else if(isFileChooserActive() && getActiveFileChooser() != nullptr) {
+        s_bottomClearCount = 2;
+        C3D_FrameDrawOn(targetBottom);
+        C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x181A20FF, 0);
+        C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionBottom);
+        uiDrawFileChooser(getActiveFileChooser());
+    } else if(menuOn) {
+        s_bottomClearCount = 2;
+        C3D_FrameDrawOn(targetBottom);
+        C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x181A20FF, 0);
+        C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionBottom);
+        uiDrawWireframeTest();
     }
 
     C3D_FrameEnd(0);

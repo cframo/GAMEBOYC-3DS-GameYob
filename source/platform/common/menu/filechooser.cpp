@@ -6,7 +6,13 @@
 #include <vector>
 #include <platform/ui.h>
 
+#ifdef BACKEND_3DS
+#include <3ds.h>
+#endif
+
 #include "platform/common/menu/filechooser.h"
+#include "platform/common/menu/menu.h"
+#include "platform/gfx.h"
 #include "platform/input.h"
 #include "platform/system.h"
 
@@ -14,16 +20,25 @@
 #define FLAG_SUSPENDED  2
 #define FLAG_ROM        4
 
-static bool fileChooserActive = false;
+bool fileChooserActive = false;
+static FileChooser* activeFileChooser = nullptr;
 
 bool isFileChooserActive() {
     return fileChooserActive;
+}
+
+FileChooser* getActiveFileChooser() {
+    return activeFileChooser;
 }
 
 FileChooser::FileChooser(std::string directory, std::vector<std::string> extensions, bool canQuit) {
     this->directory = directory;
     this->extensions = extensions;
     this->canQuit = canQuit;
+    this->numFiles = 0;
+    this->filesPerPage = 12;
+    this->scrollY = 0;
+    this->selection = 0;
 }
 
 int nameSortFunction(std::string &a, std::string &b) {
@@ -407,7 +422,9 @@ void FileChooser::redrawChooser() {
         uiSetLineHighlighted(false);
     }
 
+#ifndef BACKEND_3DS
     uiFlush();
+#endif
 }
 
 bool FileChooser::updateChooser(char** result) {
@@ -484,29 +501,150 @@ bool FileChooser::updateChooser(char** result) {
  * for free()ing it.
  */
 char* FileChooser::chooseFile() {
+#ifdef BACKEND_3DS
+    this->filesPerPage = 12;
+#else
     int height = 0;
-    uiGetSize(NULL, &height);
+    uiGetSize(nullptr, &height);
 
-    filesPerPage = height - 1;
+    this->filesPerPage = height - 1;
+#endif
 
-    refreshContents();
-    redrawChooser();
+    this->refreshContents();
+#ifndef BACKEND_3DS
+    this->redrawChooser();
+#endif
 
     fileChooserActive = true;
+    activeFileChooser = this;
+
+#ifdef BACKEND_3DS
+    u64 nextRepeat = 0;
+    while(systemIsRunning()) {
+        gspWaitForVBlank();
+        gfxDrawScreen();
+
+        hidScanInput();
+        u32 kDown = hidKeysDown();
+        u32 kHeld = hidKeysHeld();
+
+        if(kDown & KEY_TOUCH) {
+            touchPosition touch;
+            hidTouchRead(&touch);
+            // Click on file list: x: 4..188, y: 24..208
+            if(touch.px >= 4 && touch.px <= 188 && touch.py >= 24 && touch.py <= 208) {
+                int clickedIndex = this->scrollY + (int)((touch.py - 24) / 14);
+                if(clickedIndex >= 0 && clickedIndex < this->numFiles) {
+                    if(this->selection == clickedIndex) {
+                        kDown |= KEY_A;
+                    } else {
+                        this->selection = clickedIndex;
+                    }
+                }
+            }
+        }
+
+        if(kDown & KEY_A) {
+            if(this->selection >= 0 && this->selection < this->numFiles) {
+                if(this->flags[this->selection] & FLAG_DIRECTORY) {
+                    if(this->filenames[this->selection] == "..") {
+                        this->navigateBack();
+                    } else {
+                        this->directory += this->filenames[this->selection] + "/";
+                        this->selection = 1;
+                    }
+                    this->refreshContents();
+                } else {
+                    char* result = (char*) malloc(sizeof(char) * (this->directory.length() + strlen(this->filenames[this->selection].c_str()) + 1));
+                    if(result != nullptr) {
+                        strcpy(result, this->directory.c_str());
+                        strcat(result, this->filenames[this->selection].c_str());
+                    }
+                    menuOn = false;
+                    fileChooserActive = false;
+                    activeFileChooser = nullptr;
+                    return result;
+                }
+            }
+        } else if(kDown & KEY_B) {
+            if(this->canQuit && this->directory.compare("/") == 0) {
+                menuOn = false;
+                fileChooserActive = false;
+                activeFileChooser = nullptr;
+                return nullptr;
+            }
+
+            this->navigateBack();
+            this->refreshContents();
+        } else {
+            bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
+            bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+            bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+            bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+
+            u64 now = osGetTime();
+            if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeat && nextRepeat != 0) {
+                upPressed = true;
+                nextRepeat = now + 80;
+            } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeat && nextRepeat != 0) {
+                downPressed = true;
+                nextRepeat = now + 80;
+            }
+
+            if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
+                nextRepeat = now + 250;
+            } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
+                nextRepeat = 0;
+            }
+
+            if(upPressed) {
+                if(this->selection > 0) {
+                    this->selection--;
+                    this->updateScrollUp();
+                }
+            } else if(downPressed) {
+                if(this->selection < this->numFiles - 1) {
+                    this->selection++;
+                    this->updateScrollDown();
+                }
+            } else if(leftPressed) {
+                this->selection -= this->filesPerPage;
+                if(this->selection < 0) {
+                    this->selection = 0;
+                }
+                this->updateScrollUp();
+            } else if(rightPressed) {
+                this->selection += this->filesPerPage;
+                if(this->selection >= this->numFiles) {
+                    this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
+                }
+                this->updateScrollDown();
+            }
+        }
+    }
+
+    menuOn = false;
+    fileChooserActive = false;
+    activeFileChooser = nullptr;
+    return nullptr;
+#else
     while(systemIsRunning()) {
         uiSync();
         inputUpdate();
 
         char* result;
-        if(updateChooser(&result)) {
+        if(this->updateChooser(&result)) {
             uiClear();
             uiFlush();
 
             fileChooserActive = false;
+            activeFileChooser = nullptr;
             return result;
         }
     }
 
     fileChooserActive = false;
-    return NULL;
+    activeFileChooser = nullptr;
+    return nullptr;
+#endif
 }

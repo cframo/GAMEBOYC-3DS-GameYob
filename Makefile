@@ -46,6 +46,8 @@ ifeq ($(TARGET),3DS)
 
     BUILD_FLAGS += -DBACKEND_3DS
 
+    # 3DS GPU UI Renderer module compiled from source/platform/3ds/ui_renderer.cpp
+
     DESCRIPTION := (Super) GameBoy (Color) emulator.
 
     PRODUCT_CODE := CTR-P-GYOB

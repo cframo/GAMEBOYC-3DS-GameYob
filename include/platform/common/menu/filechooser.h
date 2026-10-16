@@ -4,7 +4,10 @@
 
 #include <vector>
 
+extern bool fileChooserActive;
 bool isFileChooserActive();
+class FileChooser;
+FileChooser* getActiveFileChooser();
 
 class FileChooser {
 public:
@@ -13,6 +16,13 @@ public:
     std::string getDirectory();
     void setDirectory(std::string directory);
     char* chooseFile();
+
+    const std::vector<std::string>& getFilenames() const { return this->filenames; }
+    const std::vector<int>& getFlags() const { return this->flags; }
+    int getSelection() const { return this->selection; }
+    int getNumFiles() const { return this->numFiles; }
+    int getScrollY() const { return this->scrollY; }
+    int getFilesPerPage() const { return this->filesPerPage; }
 
 private:
     void updateScrollDown();

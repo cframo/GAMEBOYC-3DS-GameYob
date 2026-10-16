@@ -6,6 +6,10 @@
 #include <fstream>
 #include <sstream>
 
+#ifdef BACKEND_3DS
+#include <3ds.h>
+#endif
+
 #include "libs/stb_image/stb_image.h"
 
 #include "platform/common/cheatengine.h"
@@ -575,9 +579,6 @@ void mgrReset() {
     mgrRefreshPalette();
 
     audioClear();
-
-    memset(gfxGetScreenBuffer(), 0, gfxGetScreenPitch() * 224 * sizeof(u32));
-    gfxDrawScreen();
 }
 
 std::string mgrGetRomName() {
@@ -590,6 +591,10 @@ void mgrPowerOn(const char* romFile) {
     }
 
     mgrPowerOff();
+
+    fileChooserActive = false;
+    menuOn = false;
+    emulationPaused = false;
 
     if(romFile != NULL) {
         std::ifstream romStream(romFile, std::ios::binary | std::ios::ate);
@@ -673,9 +678,6 @@ void mgrPowerOff(bool save) {
 
     if(systemIsRunning()) {
         mgrRefreshBorder();
-
-        memset(gfxGetScreenBuffer(), 0, gfxGetScreenPitch() * 224 * sizeof(u32));
-        gfxDrawScreen();
     }
 }
 
@@ -698,6 +700,10 @@ void mgrSelectRom() {
         systemRequestExit();
         return;
     }
+
+    fileChooserActive = false;
+    menuOn = false;
+    emulationPaused = false;
 
     mgrPowerOn(filename);
     free(filename);
@@ -972,10 +978,60 @@ void mgrRun() {
         inputUpdate();
 
         if(menuOn) {
+#ifdef BACKEND_3DS
+            u32 kDown = hidKeysDown();
+            // B, R o START reanudan la partida inmediatamente
+            if(kDown & (KEY_B | KEY_R | KEY_START)) {
+                menuOn = false;
+                mgrUnpause();
+                inputReleaseAll();
+            } else if(kDown & KEY_X) {
+                // X abre el selector de ROMs
+                menuOn = false;
+                mgrUnpause();
+                mgrSelectRom();
+                return;
+            } else if(kDown & KEY_Y) {
+                // Y reinicia el juego actual
+                menuOn = false;
+                mgrUnpause();
+                mgrReset();
+                return;
+            } else if(kDown & KEY_TOUCH) {
+                touchPosition touch;
+                hidTouchRead(&touch);
+                // Si toca el botón FILES del dock (x: 4..79, y: 216..236) -> abrir selector de ROMs
+                if(touch.px >= 4 && touch.px <= 79 && touch.py >= 216 && touch.py <= 236) {
+                    menuOn = false;
+                    mgrUnpause();
+                    mgrSelectRom();
+                    return;
+                }
+                // Si toca el botón RESET del dock (x: 241..316, y: 216..236) -> reiniciar ROM
+                else if(touch.px >= 241 && touch.px <= 316 && touch.py >= 216 && touch.py <= 236) {
+                    menuOn = false;
+                    mgrUnpause();
+                    mgrReset();
+                    return;
+                }
+                // Tocar en el panel superior/central reanuda el juego
+                else if(touch.py < 210) {
+                    menuOn = false;
+                    mgrUnpause();
+                    inputReleaseAll();
+                }
+            }
+            gspWaitForVBlank();
+            gfxDrawScreen();
+            if(!systemIsRunning()) {
+                return;
+            }
+#else
             updateMenu();
             if(!systemIsRunning()) {
                 return;
             }
+#endif
         } else if(gameboy->isPoweredOn()) {
             u8 buttonsPressed = 0xFF;
 
@@ -1039,6 +1095,15 @@ void mgrRun() {
                 mgrToggleFastForward();
             }
 
+#ifdef BACKEND_3DS
+            if((inputKeyPressed(FUNC_KEY_MENU) || inputKeyPressed(FUNC_KEY_MENU_PAUSE) || (hidKeysDown() & (KEY_R | KEY_TOUCH)))) {
+                mgrPause();
+                audioClear();
+                mgrSetFastForward(false);
+                menuOn = true;
+                inputReleaseAll();
+            }
+#else
             if((inputKeyPressed(FUNC_KEY_MENU) || inputKeyPressed(FUNC_KEY_MENU_PAUSE))) {
                 if(pauseOnMenu || inputKeyPressed(FUNC_KEY_MENU_PAUSE)) {
                     mgrPause();
@@ -1047,6 +1112,7 @@ void mgrRun() {
                 mgrSetFastForward(false);
                 displayMenu();
             }
+#endif
 
             if(inputKeyPressed(FUNC_KEY_SCALE)) {
                 setMenuOption("Scaling", (getMenuOption("Scaling") + 1) % 5);
@@ -1117,7 +1183,9 @@ void mgrRun() {
 
                 uiPrint("\n");
 
+#ifndef BACKEND_3DS
                 uiFlush();
+#endif
             }
 
             fps = 0;

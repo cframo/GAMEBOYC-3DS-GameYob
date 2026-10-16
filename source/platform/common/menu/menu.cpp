@@ -1,6 +1,10 @@
 #include <string.h>
 #include <stdlib.h>
 
+#ifdef BACKEND_3DS
+#include <3ds.h>
+#endif
+
 #include "platform/common/menu/cheatmenu.h"
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/menu/keyconfigmenu.h"
@@ -441,7 +445,9 @@ void setMenuDefaults() {
 void displayMenu() {
     inputReleaseAll();
     menuOn = true;
+#ifndef BACKEND_3DS
     redrawMenu();
+#endif
 }
 
 void closeMenu() {
@@ -449,7 +455,9 @@ void closeMenu() {
     menuOn = false;
 
     uiClear();
+#ifndef BACKEND_3DS
     uiFlush();
+#endif
 
     mgrUnpause();
 }
@@ -647,7 +655,9 @@ void redrawMenu() {
         }
     }
 
+#ifndef BACKEND_3DS
     uiFlush();
+#endif
 }
 
 // Called each vblank while the menu is on
@@ -656,6 +666,35 @@ void updateMenu() {
         return;
     }
 
+#ifdef BACKEND_3DS
+    hidScanInput();
+    u32 kDown = hidKeysDown();
+
+    if(kDown & KEY_TOUCH) {
+        touchPosition touch;
+        hidTouchRead(&touch);
+        // Boton 1: CONTINUAR (x=24..108, y=160..196)
+        if(touch.px >= 24 && touch.px <= 108 && touch.py >= 160 && touch.py <= 196) {
+            kDown |= KEY_A;
+        } else if(touch.px >= 118 && touch.px <= 202 && touch.py >= 160 && touch.py <= 196) {
+            kDown |= KEY_X;
+        } else if(touch.px >= 212 && touch.px <= 296 && touch.py >= 160 && touch.py <= 196) {
+            kDown |= KEY_Y;
+        } else {
+            // Tocar cualquier otra parte del panel continúa la partida
+            kDown |= KEY_A;
+        }
+    }
+
+    if(kDown & (KEY_A | KEY_B | KEY_START)) {
+        closeMenu();
+    } else if(kDown & KEY_X) {
+        closeMenu();
+        mgrSelectRom();
+    } else if(kDown & KEY_Y) {
+        resetFunc(0);
+    }
+#else
     if(subMenuUpdateFunc != NULL) {
         subMenuUpdateFunc();
         return;
@@ -736,6 +775,7 @@ void updateMenu() {
     if(redraw && subMenuUpdateFunc == NULL && menuOn) { // The menu may have been closed by an option
         redrawMenu();
     }
+#endif
 }
 
 // Message will be printed immediately, but also stored in case it's overwritten
@@ -763,7 +803,9 @@ void printMenuMessage(const char* s) {
     }
 
     uiPrint("%s", printMessage);
+#ifndef BACKEND_3DS
     uiFlush();
+#endif
 }
 
 void displaySubMenu(void (* updateFunc)()) {
