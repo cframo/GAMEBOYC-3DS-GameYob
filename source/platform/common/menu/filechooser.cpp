@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
+#include <cmath>
 
 #include <string>
 #include <vector>
@@ -12,6 +13,7 @@
 
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/menu/menu.h"
+#include "platform/common/manager.h"
 #include "platform/gfx.h"
 #include "platform/input.h"
 #include "platform/system.h"
@@ -19,6 +21,15 @@
 #define FLAG_DIRECTORY  1
 #define FLAG_SUSPENDED  2
 #define FLAG_ROM        4
+
+static const float ITEM_HEIGHT = 14.0f;
+static const float LIST_TOP = 24.0f;
+static const float LIST_BOTTOM = 212.0f;
+static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 188.0f
+static const float FRICTION = 0.92f;
+static const float SPRING_K = 0.35f;
+static const float SPRING_DAMP = 0.65f;
+static const float DRAG_THRESHOLD = 6.0f;
 
 bool fileChooserActive = false;
 static FileChooser* activeFileChooser = nullptr;
@@ -37,7 +48,14 @@ FileChooser::FileChooser(std::string directory, std::vector<std::string> extensi
     this->canQuit = canQuit;
     this->numFiles = 0;
     this->filesPerPage = 12;
-    this->scrollY = 0;
+    this->scrollY = 0.0f;
+    this->targetScrollY = 0.0f;
+    this->scrollVelocity = 0.0f;
+    this->isTouching = false;
+    this->isDragging = false;
+    this->touchStartPos = {0, 0};
+    this->touchPrevPos = {0, 0};
+    this->touchStartTime = 0;
     this->selection = 0;
 }
 
@@ -193,32 +211,111 @@ void FileChooser::setDirectory(std::string directory) {
     this->directory = directory;
 }
 
-void FileChooser::updateScrollDown() {
-    if(selection >= numFiles) {
-        selection = numFiles - 1;
-    }
+float FileChooser::getMaxScroll() const {
+    float totalContentH = (float) this->numFiles * ITEM_HEIGHT;
+    return totalContentH > LIST_HEIGHT ? totalContentH - LIST_HEIGHT : 0.0f;
+}
 
-    if(numFiles > filesPerPage) {
-        if(selection == numFiles - 1) {
-            scrollY = selection - filesPerPage + 1;
-        } else if(selection - scrollY >= filesPerPage - 1) {
-            scrollY = selection - filesPerPage + 2;
+void FileChooser::updatePhysics() {
+    float maxScroll = this->getMaxScroll();
+    if(!this->isTouching) {
+        if(this->scrollY < 0.0f) {
+            // Muelle en el tope superior
+            this->scrollVelocity = (this->scrollVelocity - this->scrollY * SPRING_K) * SPRING_DAMP;
+            this->scrollY += this->scrollVelocity;
+            if(fabsf(this->scrollY) < 0.2f && fabsf(this->scrollVelocity) < 0.2f) {
+                this->scrollY = 0.0f;
+                this->scrollVelocity = 0.0f;
+            }
+        } else if(this->scrollY > maxScroll) {
+            // Muelle en el fondo inferior
+            float diff = this->scrollY - maxScroll;
+            this->scrollVelocity = (this->scrollVelocity - diff * SPRING_K) * SPRING_DAMP;
+            this->scrollY += this->scrollVelocity;
+            if(fabsf(diff) < 0.2f && fabsf(this->scrollVelocity) < 0.2f) {
+                this->scrollY = maxScroll;
+                this->scrollVelocity = 0.0f;
+            }
+        } else {
+            // Fricción normal en zona visible
+            this->scrollY += this->scrollVelocity;
+            this->scrollVelocity *= FRICTION;
+            if(fabsf(this->scrollVelocity) < 0.05f) {
+                this->scrollVelocity = 0.0f;
+            }
         }
     }
 }
 
-void FileChooser::updateScrollUp() {
-    if(selection < 0) {
-        selection = 0;
+bool FileChooser::navigateToSelection(char** result) {
+    if(this->selection < 0 || this->selection >= this->numFiles) {
+        return false;
     }
 
-    if(selection == 0) {
-        scrollY = 0;
-    } else if(selection == scrollY) {
-        scrollY--;
-    } else if(selection < scrollY) {
-        scrollY = selection - 1;
+    if(this->flags[this->selection] & FLAG_DIRECTORY) {
+        if(this->filenames[this->selection] == "..") {
+            this->navigateBack();
+        } else {
+            this->directory += this->filenames[this->selection] + "/";
+            this->selection = 1;
+        }
+        this->refreshContents();
+        this->scrollY = 0.0f;
+        this->scrollVelocity = 0.0f;
+        return false;
+    } else {
+        char* res = (char*) malloc(sizeof(char) * (this->directory.length() + strlen(this->filenames[this->selection].c_str()) + 1));
+        if(res != nullptr) {
+            strcpy(res, this->directory.c_str());
+            strcat(res, this->filenames[this->selection].c_str());
+        }
+        *result = res;
+        return true;
     }
+}
+
+void FileChooser::updateScrollDown() {
+    if(this->selection >= this->numFiles) {
+        this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
+    }
+
+#ifdef BACKEND_3DS
+    float itemBottom = (float) (this->selection + 1) * ITEM_HEIGHT;
+    if(itemBottom > this->scrollY + LIST_HEIGHT) {
+        this->scrollY = itemBottom - LIST_HEIGHT;
+        this->scrollVelocity = 0.0f;
+    }
+#else
+    if(this->numFiles > this->filesPerPage) {
+        if(this->selection == this->numFiles - 1) {
+            this->scrollY = this->selection - this->filesPerPage + 1;
+        } else if(this->selection - this->scrollY >= this->filesPerPage - 1) {
+            this->scrollY = this->selection - this->filesPerPage + 2;
+        }
+    }
+#endif
+}
+
+void FileChooser::updateScrollUp() {
+    if(this->selection < 0) {
+        this->selection = 0;
+    }
+
+#ifdef BACKEND_3DS
+    float itemTop = (float) this->selection * ITEM_HEIGHT;
+    if(itemTop < this->scrollY) {
+        this->scrollY = itemTop;
+        this->scrollVelocity = 0.0f;
+    }
+#else
+    if(this->selection == 0) {
+        this->scrollY = 0.0f;
+    } else if(this->selection == (int) this->scrollY) {
+        this->scrollY -= 1.0f;
+    } else if(this->selection < (int) this->scrollY) {
+        this->scrollY = (float) (this->selection - 1);
+    }
+#endif
 }
 
 void FileChooser::navigateBack() {
@@ -428,6 +525,138 @@ void FileChooser::redrawChooser() {
 }
 
 bool FileChooser::updateChooser(char** result) {
+#ifdef BACKEND_3DS
+    this->updatePhysics();
+
+    hidScanInput();
+    u32 kDown = hidKeysDown();
+    u32 kHeld = hidKeysHeld();
+    u32 kUp = hidKeysUp();
+
+    // 1. Eventos de hidKeysDown(), hidKeysHeld(), hidKeysUp() sobre KEY_TOUCH
+    if(kDown & KEY_TOUCH) {
+        hidTouchRead(&this->touchStartPos);
+        this->touchPrevPos = this->touchStartPos;
+        this->touchStartTime = osGetTime();
+        this->isTouching = true;
+        this->isDragging = (fabsf(this->scrollVelocity) > 1.0f);
+        this->scrollVelocity = 0.0f;
+    }
+
+    if(kHeld & KEY_TOUCH) {
+        touchPosition touchCurr;
+        hidTouchRead(&touchCurr);
+        float dy = (float) (this->touchPrevPos.py - touchCurr.py);
+        float totalDist = hypotf((float) (touchCurr.px - this->touchStartPos.px), (float) (touchCurr.py - this->touchStartPos.py));
+        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px < 190 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+            this->isDragging = true;
+        }
+        if(this->isDragging) {
+            float maxScroll = this->getMaxScroll();
+            // Resistencia elástica si se arrastra fuera de límites
+            if(this->scrollY < 0.0f || this->scrollY > maxScroll) {
+                dy *= 0.4f;
+            }
+            this->scrollY += dy;
+            this->scrollVelocity = dy; // estimación de velocidad instantánea
+        }
+        this->touchPrevPos = touchCurr;
+    }
+
+    if(kUp & KEY_TOUCH) {
+        if(!this->isDragging && this->touchStartPos.px < 190 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+            // TAP en lista: calcular elemento pulsado
+            float tapY = (float) this->touchStartPos.py - LIST_TOP + this->scrollY;
+            int tappedIndex = (int) (tapY / ITEM_HEIGHT);
+            if(tappedIndex >= 0 && tappedIndex < this->numFiles) {
+                if(this->selection == tappedIndex) {
+                    // Doble tap o confirmar elemento seleccionado
+                    if(this->navigateToSelection(result)) {
+                        return true;
+                    }
+                } else {
+                    this->selection = tappedIndex;
+                }
+            }
+        } else if(!this->isDragging && this->touchStartPos.py >= 216 && this->touchStartPos.py <= 236) {
+            // TAP en Dock inferior:
+            // Botón FILES (4..79), CONFIG (83..158), CHEATS (162..237), RESET (241..316)
+            if(this->touchStartPos.px >= 4 && this->touchStartPos.px <= 79) {
+                this->refreshContents();
+            } else if(this->touchStartPos.px >= 241 && this->touchStartPos.px <= 316) {
+                mgrReset();
+                *result = nullptr;
+                return true;
+            }
+        }
+        this->isTouching = false;
+        this->isDragging = false;
+    }
+
+    // 2. Botones de acción y navegación de cruceta/CPad
+    if(kDown & KEY_A) {
+        if(this->navigateToSelection(result)) {
+            return true;
+        }
+    } else if(kDown & KEY_B) {
+        if(this->canQuit && this->directory.compare("/") == 0) {
+            *result = nullptr;
+            return true;
+        }
+
+        this->navigateBack();
+        this->refreshContents();
+        this->scrollY = 0.0f;
+        this->scrollVelocity = 0.0f;
+    } else {
+        bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
+        bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+        bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+        bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+
+        static u64 nextRepeat = 0;
+        u64 now = osGetTime();
+        if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeat && nextRepeat != 0) {
+            upPressed = true;
+            nextRepeat = now + 80;
+        } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeat && nextRepeat != 0) {
+            downPressed = true;
+            nextRepeat = now + 80;
+        }
+
+        if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
+            nextRepeat = now + 250;
+        } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
+            nextRepeat = 0;
+        }
+
+        if(upPressed) {
+            if(this->selection > 0) {
+                this->selection--;
+                this->updateScrollUp();
+            }
+        } else if(downPressed) {
+            if(this->selection < this->numFiles - 1) {
+                this->selection++;
+                this->updateScrollDown();
+            }
+        } else if(leftPressed) {
+            this->selection -= this->filesPerPage;
+            if(this->selection < 0) {
+                this->selection = 0;
+            }
+            this->updateScrollUp();
+        } else if(rightPressed) {
+            this->selection += this->filesPerPage;
+            if(this->selection >= this->numFiles) {
+                this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
+            }
+            this->updateScrollDown();
+        }
+    }
+
+    return false;
+#else
     bool readDirectory = false;
     bool redraw = false;
 
@@ -493,6 +722,7 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     return false;
+#endif
 }
 
 /*
@@ -503,123 +733,26 @@ bool FileChooser::updateChooser(char** result) {
 char* FileChooser::chooseFile() {
 #ifdef BACKEND_3DS
     this->filesPerPage = 12;
-#else
-    int height = 0;
-    uiGetSize(nullptr, &height);
-
-    this->filesPerPage = height - 1;
-#endif
-
     this->refreshContents();
-#ifndef BACKEND_3DS
-    this->redrawChooser();
-#endif
+    this->scrollY = 0.0f;
+    this->targetScrollY = 0.0f;
+    this->scrollVelocity = 0.0f;
+    this->isTouching = false;
+    this->isDragging = false;
 
     fileChooserActive = true;
     activeFileChooser = this;
 
-#ifdef BACKEND_3DS
-    u64 nextRepeat = 0;
     while(systemIsRunning()) {
         gspWaitForVBlank();
         gfxDrawScreen();
 
-        hidScanInput();
-        u32 kDown = hidKeysDown();
-        u32 kHeld = hidKeysHeld();
-
-        if(kDown & KEY_TOUCH) {
-            touchPosition touch;
-            hidTouchRead(&touch);
-            // Click on file list: x: 4..188, y: 24..208
-            if(touch.px >= 4 && touch.px <= 188 && touch.py >= 24 && touch.py <= 208) {
-                int clickedIndex = this->scrollY + (int)((touch.py - 24) / 14);
-                if(clickedIndex >= 0 && clickedIndex < this->numFiles) {
-                    if(this->selection == clickedIndex) {
-                        kDown |= KEY_A;
-                    } else {
-                        this->selection = clickedIndex;
-                    }
-                }
-            }
-        }
-
-        if(kDown & KEY_A) {
-            if(this->selection >= 0 && this->selection < this->numFiles) {
-                if(this->flags[this->selection] & FLAG_DIRECTORY) {
-                    if(this->filenames[this->selection] == "..") {
-                        this->navigateBack();
-                    } else {
-                        this->directory += this->filenames[this->selection] + "/";
-                        this->selection = 1;
-                    }
-                    this->refreshContents();
-                } else {
-                    char* result = (char*) malloc(sizeof(char) * (this->directory.length() + strlen(this->filenames[this->selection].c_str()) + 1));
-                    if(result != nullptr) {
-                        strcpy(result, this->directory.c_str());
-                        strcat(result, this->filenames[this->selection].c_str());
-                    }
-                    menuOn = false;
-                    fileChooserActive = false;
-                    activeFileChooser = nullptr;
-                    return result;
-                }
-            }
-        } else if(kDown & KEY_B) {
-            if(this->canQuit && this->directory.compare("/") == 0) {
-                menuOn = false;
-                fileChooserActive = false;
-                activeFileChooser = nullptr;
-                return nullptr;
-            }
-
-            this->navigateBack();
-            this->refreshContents();
-        } else {
-            bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
-            bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
-            bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
-            bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
-
-            u64 now = osGetTime();
-            if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeat && nextRepeat != 0) {
-                upPressed = true;
-                nextRepeat = now + 80;
-            } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeat && nextRepeat != 0) {
-                downPressed = true;
-                nextRepeat = now + 80;
-            }
-
-            if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
-                nextRepeat = now + 250;
-            } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
-                nextRepeat = 0;
-            }
-
-            if(upPressed) {
-                if(this->selection > 0) {
-                    this->selection--;
-                    this->updateScrollUp();
-                }
-            } else if(downPressed) {
-                if(this->selection < this->numFiles - 1) {
-                    this->selection++;
-                    this->updateScrollDown();
-                }
-            } else if(leftPressed) {
-                this->selection -= this->filesPerPage;
-                if(this->selection < 0) {
-                    this->selection = 0;
-                }
-                this->updateScrollUp();
-            } else if(rightPressed) {
-                this->selection += this->filesPerPage;
-                if(this->selection >= this->numFiles) {
-                    this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
-                }
-                this->updateScrollDown();
-            }
+        char* result = nullptr;
+        if(this->updateChooser(&result)) {
+            menuOn = false;
+            fileChooserActive = false;
+            activeFileChooser = nullptr;
+            return result;
         }
     }
 
@@ -628,11 +761,22 @@ char* FileChooser::chooseFile() {
     activeFileChooser = nullptr;
     return nullptr;
 #else
+    int height = 0;
+    uiGetSize(nullptr, &height);
+
+    this->filesPerPage = height - 1;
+
+    this->refreshContents();
+    this->redrawChooser();
+
+    fileChooserActive = true;
+    activeFileChooser = this;
+
     while(systemIsRunning()) {
         uiSync();
         inputUpdate();
 
-        char* result;
+        char* result = nullptr;
         if(this->updateChooser(&result)) {
             uiClear();
             uiFlush();

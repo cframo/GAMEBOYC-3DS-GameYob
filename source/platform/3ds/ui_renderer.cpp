@@ -450,28 +450,27 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     const std::vector<int>& flags = chooser->getFlags();
     int numFiles = chooser->getNumFiles();
     int selection = chooser->getSelection();
-    int scrollY = chooser->getScrollY();
-    if(scrollY < 0) {
-        scrollY = 0;
+    float scrollY = chooser->getSubpixelScrollY();
+
+    int firstIdx = (int) (scrollY / 14.0f);
+    if(firstIdx < 0) {
+        firstIdx = 0;
     }
 
-    const int maxVisible = 12;
-    int firstVisible = scrollY;
-    if(firstVisible >= numFiles && numFiles > 0) {
-        firstVisible = numFiles - 1;
-    }
-    int lastVisible = firstVisible + maxVisible;
-    if(lastVisible > numFiles) {
-        lastVisible = numFiles;
-    }
+    for(int i = firstIdx; i < numFiles; i++) {
+        float itemY = 26.0f + (float) i * 14.0f - scrollY;
+        if(itemY < 12.0f) {
+            continue;
+        }
+        if(itemY > 206.0f) {
+            break;
+        }
 
-    for(int i = firstVisible; i < lastVisible; i++) {
-        float itemY = 26.0f + (float) (i - firstVisible) * 14.0f;
         bool isSelected = (i == selection);
 
         if(isSelected) {
-            uiDrawRect(6.0f, itemY - 2.0f, 180.0f, 13.0f, colSelectedBg);
-            uiDrawRectOutline(6.0f, itemY - 2.0f, 180.0f, 13.0f, 1.0f, colSelectedBorder);
+            uiDrawRect(6.0f, itemY - 2.0f, 178.0f, 13.0f, colSelectedBg);
+            uiDrawRectOutline(6.0f, itemY - 2.0f, 178.0f, 13.0f, 1.0f, colSelectedBorder);
         }
 
         std::string fileName = (i < (int) files.size()) ? files[i] : "";
@@ -505,15 +504,34 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         uiDrawText(8.0f, itemY, displayLine.c_str(), itemColor);
     }
 
-    if(numFiles > 0) {
-        int curPage = (firstVisible / maxVisible) + 1;
-        int totalPages = (numFiles + maxVisible - 1) / maxVisible;
-        char pageStr[32];
-        snprintf(pageStr, sizeof(pageStr), "Page %d/%d (%d)", curPage, totalPages, numFiles);
-        uiDrawText(8.0f, 196.0f, pageStr, colDarkGray);
+    if(numFiles == 0) {
+        uiDrawText(8.0f, 30.0f, "No files found", colDarkGray);
     } else {
-        uiDrawText(8.0f, 196.0f, "No files found", colDarkGray);
+        // Indicador de barra de desplazamiento proporcional
+        float maxScroll = chooser->getMaxScroll();
+        if(maxScroll > 0.0f) {
+            const float trackY = 24.0f;
+            const float trackH = 184.0f;
+            float totalH = (float) numFiles * 14.0f;
+            float thumbH = trackH * (188.0f / totalH);
+            if(thumbH < 12.0f) {
+                thumbH = 12.0f;
+            }
+            float thumbY = trackY + (scrollY / maxScroll) * (trackH - thumbH);
+            if(thumbY < trackY) {
+                thumbY = trackY;
+            }
+            if(thumbY + thumbH > trackY + trackH) {
+                thumbY = trackY + trackH - thumbH;
+            }
+            uiDrawRect(184.0f, thumbY, 2.0f, thumbH, colBorder);
+        }
     }
+
+    // Máscara superior para recortar limpiamente los elementos que se desplazan hacia arriba
+    uiDrawRect(4.0f, 4.0f, 184.0f, 17.0f, colPanelBg);
+    uiDrawText(8.0f, 8.0f, "ROM SELECTOR", colYellow);
+    uiDrawRect(8.0f, 20.0f, 176.0f, 1.0f, colBorder);
 
     // 3. Preview panel (x=192, y=4, w=124, h=208)
     uiDrawRect(192.0f, 4.0f, 124.0f, 208.0f, colPanelBg);
