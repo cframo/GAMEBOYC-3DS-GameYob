@@ -203,7 +203,7 @@ template<class Data, class Metadata> void quickSort(std::vector<Data> &data, std
     }
 }
 
-std::string FileChooser::getDirectory() {
+std::string FileChooser::getDirectory() const {
     return this->directory;
 }
 

@@ -3,13 +3,29 @@
 #include <string.h>
 #include <string>
 #include <vector>
+#include <cmath>
+#include <stdio.h>
 
 #include <3ds.h>
 #include <citro3d.h>
 
+#include "libs/stb_image/stb_image.h"
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/manager.h"
 #include "platform/3ds/ui_renderer.h"
+
+#ifndef M_PI
+#define M_PI 3.14159265358979323846
+#endif
+
+static C3D_Tex s_boxartTex;
+static bool s_boxartLoaded = false;
+static bool s_boxartTexAllocated = false;
+static std::string s_lastBoxartPath = "";
+static bool s_boxartChecked = false;
+static u64 s_selectionChangeTime = 0;
+static float s_boxartAngleY = 0.0f;
+static bool s_isGBCBox = false;
 
 // Standard 8x8 monochrome ASCII font (128 characters, 8 bytes per character)
 static const u8 font8x8_basic[128][8] = {
@@ -204,12 +220,28 @@ void uiRenderInit() {
     C3D_TexSetWrap(&s_fontTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     s_fontInit = true;
+
+    // Boxart texture 128x128 RGBA8
+    if(!s_boxartTexAllocated) {
+        if(C3D_TexInit(&s_boxartTex, 128, 128, GPU_RGBA8)) {
+            C3D_TexSetFilter(&s_boxartTex, GPU_LINEAR, GPU_LINEAR);
+            C3D_TexSetWrap(&s_boxartTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
+            s_boxartTexAllocated = true;
+        }
+    }
 }
 
 void uiRenderExit() {
     if(s_fontInit) {
         C3D_TexDelete(&s_fontTex);
         s_fontInit = false;
+    }
+    if(s_boxartTexAllocated) {
+        C3D_TexDelete(&s_boxartTex);
+        s_boxartTexAllocated = false;
+        s_boxartLoaded = false;
+        s_lastBoxartPath = "";
+        s_boxartChecked = false;
     }
 }
 
@@ -338,6 +370,289 @@ void uiDrawText(float x, float y, const char* str, u32 color) {
     C3D_ImmDrawEnd();
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
+}
+
+static bool fileExists(const std::string& path) {
+    FILE* f = fopen(path.c_str(), "rb");
+    if(f != nullptr) {
+        fclose(f);
+        return true;
+    }
+    return false;
+}
+
+void uiInvalidateBoxart() {
+    s_lastBoxartPath = "";
+    s_boxartLoaded = false;
+    s_boxartChecked = false;
+}
+
+void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC) {
+    (void) mbcType;
+    if(romPath == nullptr || romPath[0] == '\0') {
+        uiInvalidateBoxart();
+        return;
+    }
+
+    std::string pathStr = romPath;
+    if(pathStr != s_lastBoxartPath) {
+        s_lastBoxartPath = pathStr;
+        s_selectionChangeTime = osGetTime();
+        s_boxartLoaded = false;
+        s_boxartChecked = false;
+        s_isGBCBox = isGBC;
+    }
+
+    // Debounce de 120 ms
+    if(!s_boxartChecked && (osGetTime() - s_selectionChangeTime > 120)) {
+        s_boxartChecked = true;
+
+        std::string romBaseName = pathStr;
+        auto slash = romBaseName.find_last_of("/\\");
+        if(slash != std::string::npos) {
+            romBaseName = romBaseName.substr(slash + 1);
+        }
+        auto dot = romBaseName.find_last_of('.');
+        if(dot != std::string::npos) {
+            romBaseName = romBaseName.substr(0, dot);
+        }
+
+        std::string cleanTitle = romTitle ? romTitle : "";
+        if(cleanTitle.empty()) {
+            FILE* rf = fopen(pathStr.c_str(), "rb");
+            if(rf != nullptr) {
+                if(fseek(rf, 0x134, SEEK_SET) == 0) {
+                    char titleBuf[17] = {0};
+                    if(fread(titleBuf, 1, 16, rf) > 0) {
+                        cleanTitle = titleBuf;
+                    }
+                }
+                if(fseek(rf, 0x143, SEEK_SET) == 0) {
+                    u8 cgbFlag = 0;
+                    if(fread(&cgbFlag, 1, 1, rf) > 0) {
+                        if((cgbFlag & 0x80) != 0) {
+                            s_isGBCBox = true;
+                        }
+                    }
+                }
+                fclose(rf);
+            }
+        }
+        while(!cleanTitle.empty() && (cleanTitle.back() == ' ' || cleanTitle.back() == '\0')) {
+            cleanTitle.pop_back();
+        }
+
+        std::string path1 = "/3ds/gameyob/boxart/" + romBaseName + ".png";
+        std::string path2 = cleanTitle.empty() ? "" : ("/3ds/gameyob/boxart/" + cleanTitle + ".png");
+
+        std::string targetPath = "";
+        if(fileExists(path1)) {
+            targetPath = path1;
+        } else if(!path2.empty() && fileExists(path2)) {
+            targetPath = path2;
+        }
+
+        if(!targetPath.empty() && s_boxartTexAllocated) {
+            int imgW = 0, imgH = 0, imgComp = 0;
+            u8* imgData = stbi_load(targetPath.c_str(), &imgW, &imgH, &imgComp, STBI_rgb_alpha);
+            if(imgData != nullptr) {
+                u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
+                if(temp != nullptr) {
+                    const u32* srcPx = (const u32*) imgData;
+                    for(int y = 0; y < 128; y++) {
+                        int srcY = (y * imgH) / 128;
+                        if(srcY >= imgH) srcY = imgH - 1;
+                        int srcRow = srcY * imgW;
+                        int dstRow = y * 128;
+                        for(int x = 0; x < 128; x++) {
+                            int srcX = (x * imgW) / 128;
+                            if(srcX >= imgW) srcX = imgW - 1;
+                            temp[dstRow + x] = srcPx[srcRow + srcX];
+                        }
+                    }
+
+                    GSPGPU_FlushDataCache(temp, 128 * 128 * sizeof(u32));
+                    C3D_SyncDisplayTransfer(
+                        temp, GX_BUFFER_DIM(128, 128),
+                        (u32*) s_boxartTex.data, GX_BUFFER_DIM(128, 128),
+                        GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+                        GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                        GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
+                    );
+                    linearFree(temp);
+                    GSPGPU_InvalidateDataCache(s_boxartTex.data, s_boxartTex.size);
+                    s_boxartLoaded = true;
+                }
+                stbi_image_free(imgData);
+            }
+        }
+    }
+}
+
+struct Vec3 { float x, y, z; };
+struct Vec2 { float u, v; };
+
+static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
+                              Vec3 p1, Vec2 uv1,
+                              Vec3 p2, Vec2 uv2,
+                              Vec3 p3, Vec2 uv3) {
+    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p1.x, p1.y, p1.z, 1.0f); C3D_ImmSendAttrib(uv1.u, uv1.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+
+    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p3.x, p3.y, p3.z, 1.0f); C3D_ImmSendAttrib(uv3.u, uv3.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+void uiDrawBoxart3D(float centerX, float centerY, float size) {
+    s_boxartAngleY += 0.02f;
+    float rotY = sinf(s_boxartAngleY) * 28.0f * (M_PI / 180.0f);
+    float rotX = -8.0f * (M_PI / 180.0f);
+
+    C3D_Mtx modelView;
+    Mtx_Identity(&modelView);
+    Mtx_Translate(&modelView, centerX, centerY, 0.5f, true);
+    Mtx_Scale(&modelView, 1.0f, 1.0f, 0.005f);
+    Mtx_RotateX(&modelView, rotX, true);
+    Mtx_RotateY(&modelView, rotY, true);
+
+    const C3D_Mtx* proj = gfxGetProjectionBottom();
+    int uLocProj = gfxGetULocProjection();
+
+    C3D_Mtx mvp;
+    Mtx_Multiply(&mvp, proj, &modelView);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProj, &mvp);
+
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+    float hw = size * 0.44f;
+    float hh = size * 0.44f;
+    float hd = 8.0f; // 16px ancho en Z
+
+    Vec3 FTL = {-hw, -hh,  hd};
+    Vec3 FTR = { hw, -hh,  hd};
+    Vec3 FBR = { hw,  hh,  hd};
+    Vec3 FBL = {-hw,  hh,  hd};
+
+    Vec3 BTL = {-hw, -hh, -hd};
+    Vec3 BTR = { hw, -hh, -hd};
+    Vec3 BBR = { hw,  hh, -hd};
+    Vec3 BBL = {-hw,  hh, -hd};
+
+    Vec2 UV_TL = {0.0f, 0.0f};
+    Vec2 UV_TR = {1.0f, 0.0f};
+    Vec2 UV_BR = {1.0f, 1.0f};
+    Vec2 UV_BL = {0.0f, 1.0f};
+
+    if(s_boxartLoaded && s_boxartTexAllocated) {
+        C3D_TexBind(0, &s_boxartTex);
+        C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+        C3D_TexEnvInit(env0);
+        C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, GPU_CONSTANT, (GPU_TEVSRC)0);
+        C3D_TexEnvFunc(env0, C3D_Both, GPU_MODULATE);
+        C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+        // 1. Cara Lateral (Lomo): 75% brillo
+        C3D_TexEnvColor(env0, UI_COLOR_RGBA(190, 190, 190, 255));
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        if(rotY >= 0.0f) {
+            emitQuad3D(BTL, UV_TL, FTL, UV_TL, FBL, UV_BL, BBL, UV_BL);
+        } else {
+            emitQuad3D(FTR, UV_TR, BTR, UV_TR, BBR, UV_BR, FBR, UV_BR);
+        }
+        C3D_ImmDrawEnd();
+
+        // 2. Cara Superior: 85% brillo
+        C3D_TexEnvColor(env0, UI_COLOR_RGBA(217, 217, 217, 255));
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        emitQuad3D(BTL, UV_TL, BTR, UV_TR, FTR, UV_TR, FTL, UV_TL);
+        C3D_ImmDrawEnd();
+
+        // 3. Cara Frontal: 100% brillo
+        C3D_TexEnvColor(env0, UI_COLOR_RGBA(255, 255, 255, 255));
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        emitQuad3D(FTL, UV_TL, FTR, UV_TR, FBR, UV_BR, FBL, UV_BL);
+        C3D_ImmDrawEnd();
+    } else {
+        C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+        C3D_TexEnvInit(env0);
+        C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+        C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+        u32 colBody = s_isGBCBox ? uiColorRGBA(48, 52, 60, 255) : uiColorRGBA(180, 180, 180, 255);
+        u32 colSide = s_isGBCBox ? uiColorRGBA(36, 39, 45, 255) : uiColorRGBA(135, 135, 135, 255);
+        u32 colTop  = s_isGBCBox ? uiColorRGBA(41, 44, 51, 255) : uiColorRGBA(153, 153, 153, 255);
+
+        // 1. Cara Lateral
+        C3D_TexEnvColor(env0, colSide);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        if(rotY >= 0.0f) {
+            emitQuad3D(BTL, UV_TL, FTL, UV_TL, FBL, UV_BL, BBL, UV_BL);
+        } else {
+            emitQuad3D(FTR, UV_TR, BTR, UV_TR, BBR, UV_BR, FBR, UV_BR);
+        }
+        C3D_ImmDrawEnd();
+
+        // 2. Cara Superior
+        C3D_TexEnvColor(env0, colTop);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        emitQuad3D(BTL, UV_TL, BTR, UV_TR, FTR, UV_TR, FTL, UV_TL);
+        C3D_ImmDrawEnd();
+
+        // 3. Cara Frontal
+        C3D_TexEnvColor(env0, colBody);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        emitQuad3D(FTL, UV_TL, FTR, UV_TR, FBR, UV_BR, FBL, UV_BL);
+        C3D_ImmDrawEnd();
+
+        // 4. Muesca superior
+        u32 colGrip = s_isGBCBox ? uiColorRGBA(32, 35, 40, 255) : uiColorRGBA(140, 140, 140, 255);
+        C3D_TexEnvColor(env0, colGrip);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        Vec3 GTL = {-hw + 4.0f, -hh + 3.0f, hd + 0.1f};
+        Vec3 GTR = { hw - 4.0f, -hh + 3.0f, hd + 0.1f};
+        Vec3 GBR = { hw - 4.0f, -hh + 7.0f, hd + 0.1f};
+        Vec3 GBL = {-hw + 4.0f, -hh + 7.0f, hd + 0.1f};
+        emitQuad3D(GTL, UV_TL, GTR, UV_TR, GBR, UV_BR, GBL, UV_BL);
+        C3D_ImmDrawEnd();
+
+        // 5. Etiqueta blanca frontal
+        u32 colSticker = uiColorRGBA(245, 245, 248, 255);
+        C3D_TexEnvColor(env0, colSticker);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        Vec3 STL = {-hw * 0.75f, -hh * 0.35f, hd + 0.2f};
+        Vec3 STR = { hw * 0.75f, -hh * 0.35f, hd + 0.2f};
+        Vec3 SBR = { hw * 0.75f,  hh * 0.85f, hd + 0.2f};
+        Vec3 SBL = {-hw * 0.75f,  hh * 0.85f, hd + 0.2f};
+        emitQuad3D(STL, UV_TL, STR, UV_TR, SBR, UV_BR, SBL, UV_BL);
+        C3D_ImmDrawEnd();
+
+        // 6. Franja de color superior de la etiqueta
+        u32 colStripe = s_isGBCBox ? uiColorRGBA(140, 40, 180, 255) : uiColorRGBA(180, 30, 60, 255);
+        C3D_TexEnvColor(env0, colStripe);
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        Vec3 B1TL = {-hw * 0.75f, -hh * 0.35f, hd + 0.3f};
+        Vec3 B1TR = { hw * 0.75f, -hh * 0.35f, hd + 0.3f};
+        Vec3 B1BR = { hw * 0.75f, -hh * 0.15f, hd + 0.3f};
+        Vec3 B1BL = {-hw * 0.75f, -hh * 0.15f, hd + 0.3f};
+        emitQuad3D(B1TL, UV_TL, B1TR, UV_TR, B1BR, UV_BR, B1BL, UV_BL);
+        C3D_ImmDrawEnd();
+    }
+
+    // Restaurar proyección ortográfica y estado de rasterizador
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProj, proj);
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
+
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
 }
 
 void uiDrawWireframeTest() {
@@ -541,7 +856,6 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     uiDrawRect(196.0f, 20.0f, 116.0f, 1.0f, colBorder);
 
     uiDrawRectOutline(208.0f, 26.0f, 92.0f, 80.0f, 1.0f, colBorder);
-    uiDrawText(220.0f, 62.0f, "[No Cover]", colDarkGray);
 
     if(selection >= 0 && selection < numFiles && selection < (int) files.size() && selection < (int) flags.size()) {
         std::string selectedFile = files[selection];
@@ -549,6 +863,9 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         bool isSuspended = (flags[selection] & 2) != 0;
 
         if(isDir) {
+            uiInvalidateBoxart();
+            uiDrawText(224.0f, 60.0f, "[Folder]", colYellow);
+
             uiDrawText(196.0f, 116.0f, "Type: Folder", colYellow);
             std::string dirTrunc = selectedFile;
             if(dirTrunc.length() > 13) {
@@ -556,15 +873,26 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             }
             uiDrawText(196.0f, 130.0f, dirTrunc.c_str(), colWhite);
         } else {
+            std::string dir = chooser->getDirectory();
+            if(!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
+                dir += "/";
+            }
+            std::string fullPath = dir + selectedFile;
+
+            std::string::size_type dot = selectedFile.find_last_of('.');
+            std::string ext = (dot != std::string::npos) ? selectedFile.substr(dot + 1) : "";
+            bool isGBC = (strcasecmp(ext.c_str(), "gbc") == 0 || strcasecmp(ext.c_str(), "cgb") == 0);
+
+            uiUpdateBoxart(fullPath.c_str(), nullptr, 0, isGBC);
+            uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
+
             std::string nameTrunc = selectedFile;
             if(nameTrunc.length() > 13) {
                 nameTrunc = nameTrunc.substr(0, 12) + "~";
             }
             uiDrawText(196.0f, 116.0f, nameTrunc.c_str(), colWhite);
 
-            std::string::size_type dot = selectedFile.find_last_of('.');
-            std::string ext = (dot != std::string::npos) ? selectedFile.substr(dot + 1) : "";
-            if(strcasecmp(ext.c_str(), "gbc") == 0 || strcasecmp(ext.c_str(), "cgb") == 0) {
+            if(isGBC) {
                 uiDrawText(196.0f, 134.0f, "Type: GBC ROM", colYellow);
             } else if(strcasecmp(ext.c_str(), "gb") == 0) {
                 uiDrawText(196.0f, 134.0f, "Type: DMG ROM", colGray);
@@ -579,6 +907,8 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             }
         }
     } else {
+        uiInvalidateBoxart();
+        uiDrawText(220.0f, 60.0f, "[No Cover]", colDarkGray);
         uiDrawText(196.0f, 116.0f, "No selection", colDarkGray);
     }
 

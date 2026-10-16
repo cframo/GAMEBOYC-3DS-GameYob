@@ -18,6 +18,9 @@ static inline u32 uiColorRGBA(u8 r, u8 g, u8 b, u8 a = 255) {
 
 class FileChooser;
 
+const C3D_Mtx* gfxGetProjectionBottom();
+int gfxGetULocProjection();
+
 void uiRenderInit();
 void uiRenderExit();
 void uiDrawRect(float x, float y, float w, float h, u32 color);
@@ -25,3 +28,7 @@ void uiDrawRectOutline(float x, float y, float w, float h, float thickness, u32 
 void uiDrawText(float x, float y, const char* str, u32 color);
 void uiDrawWireframeTest();
 void uiDrawFileChooser(const FileChooser* chooser);
+
+void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC);
+void uiDrawBoxart3D(float centerX, float centerY, float size);
+void uiInvalidateBoxart();

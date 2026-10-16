@@ -946,4 +946,12 @@ void gfxDrawScreen() {
     curTexIdx ^= 1;
 }
 
+const C3D_Mtx* gfxGetProjectionBottom() {
+    return &projectionBottom;
+}
+
+int gfxGetULocProjection() {
+    return uLocProjection;
+}
+
 #endif
