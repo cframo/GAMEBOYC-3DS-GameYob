@@ -11,6 +11,7 @@
 #define UI_COLOR_GRAY     UI_COLOR_RGBA(150, 160, 175, 255)
 #define UI_COLOR_DARKGRAY UI_COLOR_RGBA(100, 110, 125, 255)
 #define UI_COLOR_PURPLE   UI_COLOR_RGBA(210, 140, 255, 255)
+#define UI_COLOR_GREEN    UI_COLOR_RGBA(80, 220, 100, 255)
 
 static inline u32 uiColorRGBA(u8 r, u8 g, u8 b, u8 a = 255) {
     return (u32)r | ((u32)g << 8) | ((u32)b << 16) | ((u32)a << 24);

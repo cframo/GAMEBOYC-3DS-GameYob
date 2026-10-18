@@ -12,6 +12,7 @@
 #include "libs/stb_image/stb_image.h"
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/manager.h"
+#include "platform/common/rom_metadata.h"
 #include "platform/3ds/ui_renderer.h"
 
 #ifndef M_PI
@@ -26,6 +27,10 @@ static bool s_boxartChecked = false;
 static u64 s_selectionChangeTime = 0;
 static float s_boxartAngleY = 0.0f;
 static bool s_isGBCBox = false;
+
+static RomMetadata s_currentMeta;
+static bool s_metaLoaded = false;
+static std::string s_lastMetaRom = "";
 
 // Standard 8x8 monochrome ASCII font (128 characters, 8 bytes per character)
 static const u8 font8x8_basic[128][8] = {
@@ -341,6 +346,25 @@ void uiDrawText(float x, float y, const char* str, u32 color) {
     len = 0;
     for(const char* p = str; *p != '\0' && len < 28; p++, len++) {
         u8 c = (u8)*p;
+        if(c == 0xC3 && *(p + 1) != '\0') {
+            p++;
+            u8 next = (u8)*p;
+            switch(next) {
+                case 0xA1: c = 'a'; break; // á
+                case 0xA9: c = 'e'; break; // é
+                case 0xAD: c = 'i'; break; // í
+                case 0xB3: c = 'o'; break; // ó
+                case 0xBA: c = 'u'; break; // ú
+                case 0xB1: c = 'n'; break; // ñ
+                case 0x81: c = 'A'; break; // Á
+                case 0x89: c = 'E'; break; // É
+                case 0x8D: c = 'I'; break; // Í
+                case 0x93: c = 'O'; break; // Ó
+                case 0x9A: c = 'U'; break; // Ú
+                case 0x91: c = 'N'; break; // Ñ
+                default:   c = '?'; break;
+            }
+        }
         if(c == '\n') {
             cur_x = x;
             cur_y += 8.0f;
@@ -385,6 +409,8 @@ void uiInvalidateBoxart() {
     s_lastBoxartPath = "";
     s_boxartLoaded = false;
     s_boxartChecked = false;
+    s_metaLoaded = false;
+    s_lastMetaRom = "";
 }
 
 void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC) {
@@ -400,12 +426,21 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
         s_selectionChangeTime = osGetTime();
         s_boxartLoaded = false;
         s_boxartChecked = false;
+        s_metaLoaded = false;
+        s_lastMetaRom = pathStr;
         s_isGBCBox = isGBC;
     }
 
     // Debounce de 120 ms
     if(!s_boxartChecked && (osGetTime() - s_selectionChangeTime > 120)) {
         s_boxartChecked = true;
+
+        if(!s_metaLoaded) {
+            s_metaLoaded = fetchRomMetadata(pathStr, s_currentMeta);
+            if(s_metaLoaded) {
+                s_isGBCBox = s_currentMeta.isGBC;
+            }
+        }
 
         std::string romBaseName = pathStr;
         auto slash = romBaseName.find_last_of("/\\");
@@ -418,25 +453,8 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
         }
 
         std::string cleanTitle = romTitle ? romTitle : "";
-        if(cleanTitle.empty()) {
-            FILE* rf = fopen(pathStr.c_str(), "rb");
-            if(rf != nullptr) {
-                if(fseek(rf, 0x134, SEEK_SET) == 0) {
-                    char titleBuf[17] = {0};
-                    if(fread(titleBuf, 1, 16, rf) > 0) {
-                        cleanTitle = titleBuf;
-                    }
-                }
-                if(fseek(rf, 0x143, SEEK_SET) == 0) {
-                    u8 cgbFlag = 0;
-                    if(fread(&cgbFlag, 1, 1, rf) > 0) {
-                        if((cgbFlag & 0x80) != 0) {
-                            s_isGBCBox = true;
-                        }
-                    }
-                }
-                fclose(rf);
-            }
+        if(cleanTitle.empty() && s_metaLoaded) {
+            cleanTitle = s_currentMeta.title;
         }
         while(!cleanTitle.empty() && (cleanTitle.back() == ' ' || cleanTitle.back() == '\0')) {
             cleanTitle.pop_back();
@@ -747,7 +765,6 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     const u32 colYellow = UI_COLOR_YELLOW;
     const u32 colWhite = UI_COLOR_WHITE;
     const u32 colCyan = UI_COLOR_CYAN;
-    const u32 colGray = UI_COLOR_GRAY;
     const u32 colDarkGray = UI_COLOR_DARKGRAY;
     const u32 colPurple = UI_COLOR_PURPLE;
 
@@ -864,14 +881,16 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
         if(isDir) {
             uiInvalidateBoxart();
-            uiDrawText(224.0f, 60.0f, "[Folder]", colYellow);
+            uiDrawText(224.0f, 60.0f, "[Folder]", UI_COLOR_YELLOW);
 
-            uiDrawText(196.0f, 116.0f, "Type: Folder", colYellow);
+            uiDrawText(196.0f, 114.0f, "Type: Folder", UI_COLOR_YELLOW);
             std::string dirTrunc = selectedFile;
-            if(dirTrunc.length() > 13) {
-                dirTrunc = dirTrunc.substr(0, 12) + "~";
+            if(dirTrunc.length() > 14) {
+                dirTrunc = dirTrunc.substr(0, 13) + "~";
             }
-            uiDrawText(196.0f, 130.0f, dirTrunc.c_str(), colWhite);
+            uiDrawText(196.0f, 127.0f, dirTrunc.c_str(), UI_COLOR_WHITE);
+            uiDrawText(196.0f, 196.0f, "A:Open", UI_COLOR_WHITE);
+            uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
         } else {
             std::string dir = chooser->getDirectory();
             if(!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
@@ -886,34 +905,82 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             uiUpdateBoxart(fullPath.c_str(), nullptr, 0, isGBC);
             uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
 
-            std::string nameTrunc = selectedFile;
-            if(nameTrunc.length() > 13) {
-                nameTrunc = nameTrunc.substr(0, 12) + "~";
+            // Línea 1 (y=114): Título limpio del juego (máx 14 chars)
+            std::string dispTitle = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : selectedFile;
+            if(dispTitle.length() > 14) {
+                dispTitle = dispTitle.substr(0, 13) + "~";
             }
-            uiDrawText(196.0f, 116.0f, nameTrunc.c_str(), colWhite);
+            uiDrawText(196.0f, 114.0f, dispTitle.c_str(), UI_COLOR_WHITE);
 
-            if(isGBC) {
-                uiDrawText(196.0f, 134.0f, "Type: GBC ROM", colYellow);
-            } else if(strcasecmp(ext.c_str(), "gb") == 0) {
-                uiDrawText(196.0f, 134.0f, "Type: DMG ROM", colGray);
-            } else if(strcasecmp(ext.c_str(), "sgb") == 0) {
-                uiDrawText(196.0f, 134.0f, "Type: SGB ROM", colYellow);
+            // Línea 2 (y=127): Publisher y Región
+            char line2[16];
+            if(s_metaLoaded) {
+                snprintf(line2, sizeof(line2), "%.9s (%.2s)", s_currentMeta.publisher.c_str(), s_currentMeta.region.c_str());
             } else {
-                uiDrawText(196.0f, 134.0f, "Type: File", colGray);
+                snprintf(line2, sizeof(line2), "Reading...");
+            }
+            line2[14] = '\0';
+            uiDrawText(196.0f, 127.0f, line2, UI_COLOR_YELLOW);
+
+            // Línea 3 (y=140): Año y Género
+            char line3[16];
+            if(s_metaLoaded) {
+                if(s_currentMeta.year > 0) {
+                    snprintf(line3, sizeof(line3), "%d | %.7s", s_currentMeta.year, s_currentMeta.genre.c_str());
+                } else {
+                    snprintf(line3, sizeof(line3), "---- | %.7s", s_currentMeta.genre.c_str());
+                }
+            } else {
+                snprintf(line3, sizeof(line3), "---- | Clasico");
+            }
+            line3[14] = '\0';
+            uiDrawText(196.0f, 140.0f, line3, UI_COLOR_GRAY);
+
+            // Línea 4 (y=153): Hardware compacto
+            char line4[16];
+            if(s_metaLoaded) {
+                std::string mbcShort = s_currentMeta.mbcName.substr(0, 4);
+                int romM = s_currentMeta.romSizeKB >= 1024 ? s_currentMeta.romSizeKB / 1024 : s_currentMeta.romSizeKB;
+                const char* unit = s_currentMeta.romSizeKB >= 1024 ? "M" : "K";
+                snprintf(line4, sizeof(line4), "%s %d%s %s", mbcShort.c_str(), romM, unit, s_currentMeta.hasBattery ? "BAT" : "");
+            } else {
+                snprintf(line4, sizeof(line4), "%s", isGBC ? "CGB Hardware" : "DMG Hardware");
+            }
+            line4[14] = '\0';
+            uiDrawText(196.0f, 153.0f, line4, UI_COLOR_CYAN);
+
+            // Línea 5 (y=166): Savefile
+            char line5[16];
+            if(s_metaLoaded) {
+                snprintf(line5, sizeof(line5), "Sav: %s", s_currentMeta.saveDate.c_str());
+            } else {
+                snprintf(line5, sizeof(line5), "Sav: ...");
+            }
+            line5[14] = '\0';
+            uiDrawText(196.0f, 166.0f, line5, (s_metaLoaded && s_currentMeta.hasSave) ? UI_COLOR_GREEN : UI_COLOR_DARKGRAY);
+
+            // Línea 6 (y=180): Tipo de ROM
+            if(isSuspended) {
+                uiDrawText(196.0f, 180.0f, "State: Saved", UI_COLOR_PURPLE);
+            } else if(s_metaLoaded ? s_currentMeta.isGBC : isGBC) {
+                uiDrawText(196.0f, 180.0f, "Type: GBC ROM", UI_COLOR_YELLOW);
+            } else if(s_metaLoaded && s_currentMeta.isSGB) {
+                uiDrawText(196.0f, 180.0f, "Type: SGB ROM", UI_COLOR_YELLOW);
+            } else {
+                uiDrawText(196.0f, 180.0f, "Type: DMG ROM", UI_COLOR_GRAY);
             }
 
-            if(isSuspended) {
-                uiDrawText(196.0f, 152.0f, "State: Saved", colPurple);
-            }
+            // Línea 7 (y=196): "A:Play  B:Back"
+            uiDrawText(196.0f, 196.0f, "A:Play", UI_COLOR_WHITE);
+            uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
         }
     } else {
         uiInvalidateBoxart();
-        uiDrawText(220.0f, 60.0f, "[No Cover]", colDarkGray);
-        uiDrawText(196.0f, 116.0f, "No selection", colDarkGray);
+        uiDrawText(220.0f, 60.0f, "[No Cover]", UI_COLOR_DARKGRAY);
+        uiDrawText(196.0f, 114.0f, "No selection", UI_COLOR_DARKGRAY);
+        uiDrawText(196.0f, 196.0f, "A:Play", UI_COLOR_WHITE);
+        uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
     }
-
-    uiDrawText(196.0f, 176.0f, "A: Launch", colWhite);
-    uiDrawText(196.0f, 192.0f, "B: Back", colGray);
 
     // 4. Bottom dock (4 buttons from x=4..316, y=216..236)
     const float btnW = 75.0f;
