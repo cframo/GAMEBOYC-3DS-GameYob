@@ -5,6 +5,7 @@
 
 #ifdef BACKEND_3DS
 #include <3ds.h>
+#include "platform/3ds/scraper_worker.h"
 #endif
 
 int main(int argc, char* argv[]) {
@@ -14,6 +15,10 @@ int main(int argc, char* argv[]) {
     if(!systemInit(argc, argv)) {
         return false;
     }
+
+#ifdef BACKEND_3DS
+    scraperInit();
+#endif
 
     mgrInit();
     setMenuDefaults();
@@ -28,6 +33,10 @@ int main(int argc, char* argv[]) {
     }
 
     mgrExit();
+
+#ifdef BACKEND_3DS
+    scraperExit();
+#endif
 
     systemExit();
     return 0;

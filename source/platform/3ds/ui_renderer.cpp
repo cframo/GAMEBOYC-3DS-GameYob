@@ -5,6 +5,9 @@
 #include <vector>
 #include <cmath>
 #include <stdio.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <strings.h>
 
 #include <3ds.h>
 #include <citro3d.h>
@@ -13,6 +16,7 @@
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/manager.h"
 #include "platform/common/rom_metadata.h"
+#include "platform/3ds/scraper_worker.h"
 #include "platform/3ds/ui_renderer.h"
 
 #ifndef M_PI
@@ -234,6 +238,10 @@ void uiRenderInit() {
             s_boxartTexAllocated = true;
         }
     }
+
+    mkdir("/3ds", 0777);
+    mkdir("/3ds/gameyob", 0777);
+    mkdir("/3ds/gameyob/boxart", 0777);
 }
 
 void uiRenderExit() {
@@ -405,6 +413,30 @@ static bool fileExists(const std::string& path) {
     return false;
 }
 
+static std::string findBoxartPrefixMatch(const std::string& prefix) {
+    if(prefix.length() < 4) {
+        return "";
+    }
+    DIR* d = opendir("/3ds/gameyob/boxart");
+    if(d == nullptr) {
+        return "";
+    }
+    std::string match = "";
+    struct dirent* ent;
+    size_t cmpLen = std::min((size_t)6, prefix.length());
+    while((ent = readdir(d)) != nullptr) {
+        std::string fname = ent->d_name;
+        if(fname.length() >= 4 && strcasecmp(fname.substr(fname.length() - 4).c_str(), ".png") == 0) {
+            if(fname.length() >= cmpLen && strncasecmp(fname.c_str(), prefix.c_str(), cmpLen) == 0) {
+                match = "/3ds/gameyob/boxart/" + fname;
+                break;
+            }
+        }
+    }
+    closedir(d);
+    return match;
+}
+
 void uiInvalidateBoxart() {
     s_lastBoxartPath = "";
     s_boxartLoaded = false;
@@ -444,6 +476,7 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
 
         std::string romBaseName = pathStr;
         auto slash = romBaseName.find_last_of("/\\");
+        std::string romDir = (slash != std::string::npos) ? romBaseName.substr(0, slash + 1) : "";
         if(slash != std::string::npos) {
             romBaseName = romBaseName.substr(slash + 1);
         }
@@ -451,6 +484,9 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
         if(dot != std::string::npos) {
             romBaseName = romBaseName.substr(0, dot);
         }
+
+        auto fullDot = pathStr.find_last_of('.');
+        std::string romPathSinExt = (fullDot != std::string::npos) ? pathStr.substr(0, fullDot) : pathStr;
 
         std::string cleanTitle = romTitle ? romTitle : "";
         if(cleanTitle.empty() && s_metaLoaded) {
@@ -460,14 +496,33 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
             cleanTitle.pop_back();
         }
 
-        std::string path1 = "/3ds/gameyob/boxart/" + romBaseName + ".png";
-        std::string path2 = cleanTitle.empty() ? "" : ("/3ds/gameyob/boxart/" + cleanTitle + ".png");
+        // Búsqueda local flexible en 5 niveles:
+        // 1) Misma carpeta que la ROM: <romFullPathSinExt>.png (ej. '/gb/Pokemon Oro.png')
+        std::string cand1 = romPathSinExt + ".png";
+        // 2) '/3ds/gameyob/boxart/<romFileNameSinExt>.png'
+        std::string cand2 = "/3ds/gameyob/boxart/" + romBaseName + ".png";
+        // 3) '/3ds/gameyob/boxart/<cleanHeaderTitle>.png'
+        std::string cand3 = cleanTitle.empty() ? "" : ("/3ds/gameyob/boxart/" + cleanTitle + ".png");
+        // 4) '<romDir>boxart/<romFileNameSinExt>.png'
+        std::string cand4 = romDir + "boxart/" + romBaseName + ".png";
 
         std::string targetPath = "";
-        if(fileExists(path1)) {
-            targetPath = path1;
-        } else if(!path2.empty() && fileExists(path2)) {
-            targetPath = path2;
+        if(fileExists(cand1)) {
+            targetPath = cand1;
+        } else if(fileExists(cand2)) {
+            targetPath = cand2;
+        } else if(!cand3.empty() && fileExists(cand3)) {
+            targetPath = cand3;
+        } else if(fileExists(cand4)) {
+            targetPath = cand4;
+        } else {
+            // 5) Escaneo rápido case-insensitive en '/3ds/gameyob/boxart/'
+            if(!cleanTitle.empty()) {
+                targetPath = findBoxartPrefixMatch(cleanTitle);
+            }
+            if(targetPath.empty()) {
+                targetPath = findBoxartPrefixMatch(romBaseName);
+            }
         }
 
         if(!targetPath.empty() && s_boxartTexAllocated) {
@@ -503,6 +558,10 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
                 }
                 stbi_image_free(imgData);
             }
+        }
+
+        if(!s_boxartLoaded) {
+            scraperEnqueue(pathStr, cleanTitle, 0);
         }
     }
 }
@@ -869,7 +928,34 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     uiDrawRect(192.0f, 4.0f, 124.0f, 208.0f, colPanelBg);
     uiDrawRectOutline(192.0f, 4.0f, 124.0f, 208.0f, 1.0f, colBorder);
 
-    uiDrawText(196.0f, 8.0f, "ROM PREVIEW", colYellow);
+    std::string currentSelectedRom = "";
+    if(selection >= 0 && selection < numFiles && selection < (int) files.size() && selection < (int) flags.size()) {
+        bool isDir = (flags[selection] & 1) != 0;
+        if(!isDir) {
+            std::string dir = chooser->getDirectory();
+            if(!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
+                dir += "/";
+            }
+            currentSelectedRom = dir + files[selection];
+        }
+    }
+
+    const char* scStatus = scraperGetStatusText();
+    if(scStatus != nullptr && scStatus[0] != '\0') {
+        u32 scCol = UI_COLOR_CYAN;
+        if(strncmp(scStatus, "E:", 2) == 0) {
+            scCol = UI_COLOR_RGBA(255, 90, 90, 255);
+        } else if(strcmp(scStatus, "DL:OK") == 0) {
+            scCol = UI_COLOR_GREEN;
+        }
+        uiDrawText(196.0f, 8.0f, "PREVIEW", colYellow);
+        uiDrawText(256.0f, 8.0f, scStatus, scCol);
+    } else {
+        uiDrawText(196.0f, 8.0f, "ROM PREVIEW", colYellow);
+        if(scraperHasPendingCovers(currentSelectedRom)) {
+            uiDrawText(284.0f, 8.0f, "[DL]", UI_COLOR_GREEN);
+        }
+    }
     uiDrawRect(196.0f, 20.0f, 116.0f, 1.0f, colBorder);
 
     uiDrawRectOutline(208.0f, 26.0f, 92.0f, 80.0f, 1.0f, colBorder);
@@ -892,15 +978,15 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             uiDrawText(196.0f, 196.0f, "A:Open", UI_COLOR_WHITE);
             uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
         } else {
-            std::string dir = chooser->getDirectory();
-            if(!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
-                dir += "/";
-            }
-            std::string fullPath = dir + selectedFile;
+            std::string fullPath = currentSelectedRom;
 
             std::string::size_type dot = selectedFile.find_last_of('.');
             std::string ext = (dot != std::string::npos) ? selectedFile.substr(dot + 1) : "";
             bool isGBC = (strcasecmp(ext.c_str(), "gbc") == 0 || strcasecmp(ext.c_str(), "cgb") == 0);
+
+            if(scraperCheckCoverReady(fullPath)) {
+                uiInvalidateBoxart();
+            }
 
             uiUpdateBoxart(fullPath.c_str(), nullptr, 0, isGBC);
             uiDrawBoxart3D(254.0f, 66.0f, 64.0f);

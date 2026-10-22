@@ -41,10 +41,10 @@ endif
 # 3DS CONFIGURATION #
 
 ifeq ($(TARGET),3DS)
-    LIBRARY_DIRS += $(DEVKITPRO)/libctru
-    LIBRARIES += citro3d ctru
+    LIBRARY_DIRS += $(DEVKITPRO)/libctru $(DEVKITPRO)/portlibs/3ds
+    LIBRARIES += curl mbedtls mbedx509 mbedcrypto z citro3d ctru
 
-    BUILD_FLAGS += -DBACKEND_3DS
+    BUILD_FLAGS += -DBACKEND_3DS -DHAVE_LIBCURL
 
     # 3DS GPU UI Renderer module compiled from source/platform/3ds/ui_renderer.cpp
 
