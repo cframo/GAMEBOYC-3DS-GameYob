@@ -25,8 +25,8 @@
 
 static const float ITEM_HEIGHT = 14.0f;
 static const float LIST_TOP = 24.0f;
-static const float LIST_BOTTOM = 212.0f;
-static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 188.0f
+static const float LIST_BOTTOM = 208.0f;
+static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 184.0f
 static const float FRICTION = 0.92f;
 static const float SPRING_K = 0.35f;
 static const float SPRING_DAMP = 0.65f;
@@ -557,7 +557,7 @@ bool FileChooser::updateChooser(char** result) {
         hidTouchRead(&touchCurr);
         float dy = (float) (this->touchPrevPos.py - touchCurr.py);
         float totalDist = hypotf((float) (touchCurr.px - this->touchStartPos.px), (float) (touchCurr.py - this->touchStartPos.py));
-        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px < 190 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px >= 8 && this->touchStartPos.px <= 156 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
             this->isDragging = true;
         }
         if(this->isDragging) {
@@ -573,7 +573,7 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     if(kUp & KEY_TOUCH) {
-        if(!this->isDragging && this->touchStartPos.px < 190 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+        if(!this->isDragging && this->touchStartPos.px >= 8 && this->touchStartPos.px <= 156 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
             // TAP en lista: calcular elemento pulsado
             float tapY = (float) this->touchStartPos.py - LIST_TOP + this->scrollY;
             int tappedIndex = (int) (tapY / ITEM_HEIGHT);
@@ -581,23 +581,40 @@ bool FileChooser::updateChooser(char** result) {
                 if(this->selection == tappedIndex) {
                     // Doble tap o confirmar elemento seleccionado
                     if(this->navigateToSelection(result)) {
+                        stateNum = uiGetPreviewSlot();
                         return true;
                     }
                 } else {
                     this->selection = tappedIndex;
                 }
             }
-        } else if(!this->isDragging && this->touchStartPos.py >= 216 && this->touchStartPos.py <= 236) {
+        } else if(!this->isDragging && this->touchStartPos.py >= 144 && this->touchStartPos.py <= 168) {
+            // TAP en flechas de selección de savestate slot
+            if(this->touchStartPos.px >= 174 && this->touchStartPos.px <= 210) {
+                uiCyclePreviewSlot(-1);
+            } else if(this->touchStartPos.px >= 230 && this->touchStartPos.px <= 266) {
+                uiCyclePreviewSlot(1);
+            }
+        } else if(!this->isDragging && this->touchStartPos.px >= 164 && this->touchStartPos.px <= 312 && this->touchStartPos.py >= 180 && this->touchStartPos.py <= 208) {
+            // TAP en atajo de iniciar ROM del panel derecho
+            if(this->navigateToSelection(result)) {
+                stateNum = uiGetPreviewSlot();
+                return true;
+            }
+        } else if(!this->isDragging && this->touchStartPos.py >= 212 && this->touchStartPos.py <= 236) {
             // TAP en Dock inferior:
-            // Botón FILES (4..79), CONFIG (83..158), CHEATS (162..237), RESET (241..316)
-            if(this->touchStartPos.px >= 4 && this->touchStartPos.px <= 79) {
-                this->refreshContents();
-            } else if(this->touchStartPos.px >= 83 && this->touchStartPos.px <= 158) {
+            // Botón Display (6..78), Paleta (82..154), Carpeta (158..238), Salir (242..314)
+            if(this->touchStartPos.px >= 6 && this->touchStartPos.px <= 78) {
                 uiOpenConfigModal(UI_TAB_VIDEO);
-            } else if(this->touchStartPos.px >= 162 && this->touchStartPos.px <= 237) {
-                uiOpenConfigModal(UI_TAB_CHEATS);
-            } else if(this->touchStartPos.px >= 241 && this->touchStartPos.px <= 316) {
-                mgrReset();
+            } else if(this->touchStartPos.px >= 82 && this->touchStartPos.px <= 154) {
+                mgrCyclePalette();
+            } else if(this->touchStartPos.px >= 158 && this->touchStartPos.px <= 238) {
+                this->navigateBack();
+                this->refreshContents();
+                this->scrollY = 0.0f;
+                this->scrollVelocity = 0.0f;
+            } else if(this->touchStartPos.px >= 242 && this->touchStartPos.px <= 314) {
+                systemRequestExit();
                 *result = nullptr;
                 return true;
             }
@@ -617,8 +634,23 @@ bool FileChooser::updateChooser(char** result) {
         uiOpenConfigModal(UI_TAB_GAME);
     }
 
+    if(kDown & KEY_L) {
+        this->selection -= this->filesPerPage;
+        if(this->selection < 0) {
+            this->selection = 0;
+        }
+        this->updateScrollUp();
+    } else if(kDown & KEY_R) {
+        this->selection += this->filesPerPage;
+        if(this->selection >= this->numFiles) {
+            this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
+        }
+        this->updateScrollDown();
+    }
+
     if(kDown & KEY_A) {
         if(this->navigateToSelection(result)) {
+            stateNum = uiGetPreviewSlot();
             return true;
         }
     } else if(kDown & KEY_B) {
@@ -664,17 +696,9 @@ bool FileChooser::updateChooser(char** result) {
                 this->updateScrollDown();
             }
         } else if(leftPressed) {
-            this->selection -= this->filesPerPage;
-            if(this->selection < 0) {
-                this->selection = 0;
-            }
-            this->updateScrollUp();
+            uiCyclePreviewSlot(-1);
         } else if(rightPressed) {
-            this->selection += this->filesPerPage;
-            if(this->selection >= this->numFiles) {
-                this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
-            }
-            this->updateScrollDown();
+            uiCyclePreviewSlot(1);
         }
     }
 

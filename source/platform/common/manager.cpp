@@ -862,6 +862,11 @@ void mgrRefreshPalette() {
     memcpy(gameboy->ppu->getSprPalette() + 4 * 4, palette + 8, 4 * sizeof(u32));
 }
 
+void mgrCyclePalette() {
+    gbColorizeMode = (gbColorizeMode + 1) % 14;
+    mgrRefreshPalette();
+}
+
 bool mgrTryRawBorderFile(std::string border) {
     std::ifstream stream(border, std::ios::binary);
     if(stream.is_open()) {

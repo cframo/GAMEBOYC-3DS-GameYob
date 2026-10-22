@@ -28,6 +28,7 @@ bool mgrSaveState(int stateNum);
 void mgrDeleteState(int stateNum);
 
 void mgrRefreshPalette();
+void mgrCyclePalette();
 void mgrRefreshBorder();
 
 bool mgrGetFastForward();

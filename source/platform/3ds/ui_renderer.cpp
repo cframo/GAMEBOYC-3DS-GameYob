@@ -620,6 +620,7 @@ static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
 
 static bool s_show3DArt = true;
 static bool s_showSynopsis = false;
+static int s_previewSlot = 0;
 
 void uiToggle3DArt() {
     s_show3DArt = !s_show3DArt;
@@ -635,6 +636,20 @@ bool uiIs3DArtEnabled() {
 
 bool uiIsSynopsisEnabled() {
     return s_showSynopsis;
+}
+
+int uiGetPreviewSlot() {
+    return s_previewSlot;
+}
+
+void uiSetPreviewSlot(int slot) {
+    if(slot < 0) slot = 9;
+    else if(slot > 9) slot = 0;
+    s_previewSlot = slot;
+}
+
+void uiCyclePreviewSlot(int delta) {
+    uiSetPreviewSlot(s_previewSlot + delta);
 }
 
 static std::vector<std::string> wrapSynopsisText(const std::string& text, size_t maxLen) {
@@ -1389,28 +1404,33 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         return;
     }
 
-    const u32 colBg = uiColorRGBA(24, 26, 32, 255);
-    const u32 colPanelBg = uiColorRGBA(18, 20, 26, 255);
-    const u32 colBorder = uiColorRGBA(64, 80, 104, 255);
-    const u32 colSelectedBg = uiColorRGBA(36, 54, 82, 255);
-    const u32 colSelectedBorder = uiColorRGBA(70, 110, 160, 255);
-    const u32 colDockBtnBg = uiColorRGBA(34, 40, 52, 255);
+    const u32 colBg = uiColorRGBA(20, 22, 28, 255);
+    const u32 colPanelBg = uiColorRGBA(16, 20, 28, 255);
+    const u32 colBorder = uiColorRGBA(40, 60, 90, 255);
+    const u32 colListBorder = uiColorRGBA(36, 70, 110, 255);
+    const u32 colAmber = uiColorRGBA(196, 148, 56, 255);
 
     const u32 colYellow = UI_COLOR_YELLOW;
     const u32 colWhite = UI_COLOR_WHITE;
     const u32 colCyan = UI_COLOR_CYAN;
+    const u32 colGray = UI_COLOR_GRAY;
     const u32 colDarkGray = UI_COLOR_DARKGRAY;
-    const u32 colPurple = UI_COLOR_PURPLE;
+    const u32 colGreen = UI_COLOR_GREEN;
 
-    // 1. Dark background
+    // 1. Fondo general de la pantalla inferior (320x240)
     uiDrawRect(0.0f, 0.0f, 320.0f, 240.0f, colBg);
 
-    // 2. ROM list panel (x=4, y=4, w=184, h=208)
-    uiDrawRect(4.0f, 4.0f, 184.0f, 208.0f, colPanelBg);
-    uiDrawRectOutline(4.0f, 4.0f, 184.0f, 208.0f, 1.0f, colBorder);
+    // Header Superior (y: 4..18)
+    std::string dirTitle = "ROMS: " + chooser->getDirectory();
+    if(dirTitle.length() > 27) {
+        dirTitle = dirTitle.substr(0, 26) + "~";
+    }
+    uiDrawText(8.0f, 6.0f, dirTitle.c_str(), colYellow);
+    uiDrawText(268.0f, 6.0f, "v1.0.9", colGray);
 
-    uiDrawText(8.0f, 8.0f, "ROM SELECTOR", colYellow);
-    uiDrawRect(8.0f, 20.0f, 176.0f, 1.0f, colBorder);
+    // 2. Lista de ROMs (Panel Izquierdo, x: 8..156, y: 22..208)
+    uiDrawRect(8.0f, 22.0f, 148.0f, 186.0f, colPanelBg);
+    uiDrawRectOutline(8.0f, 22.0f, 148.0f, 186.0f, 1.0f, colListBorder);
 
     const std::vector<std::string>& files = chooser->getFilenames();
     const std::vector<int>& flags = chooser->getFlags();
@@ -1418,95 +1438,83 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     int selection = chooser->getSelection();
     float scrollY = chooser->getSubpixelScrollY();
 
-    int firstIdx = (int) (scrollY / 14.0f);
-    if(firstIdx < 0) {
-        firstIdx = 0;
-    }
+    int firstIdx = (int)(scrollY / 14.0f);
+    if(firstIdx < 0) firstIdx = 0;
 
     for(int i = firstIdx; i < numFiles; i++) {
-        float itemY = 26.0f + (float) i * 14.0f - scrollY;
-        if(itemY < 12.0f) {
-            continue;
-        }
-        if(itemY > 206.0f) {
-            break;
-        }
+        float itemY = 24.0f + (float)i * 14.0f - scrollY;
+        if(itemY < 10.0f) continue;
+        if(itemY > 206.0f) break;
 
         bool isSelected = (i == selection);
+        bool isDir = (i < (int)flags.size()) && ((flags[i] & 1) != 0);
+        std::string rawName = (i < (int)files.size()) ? files[i] : "";
 
         if(isSelected) {
-            uiDrawRect(6.0f, itemY - 2.0f, 178.0f, 13.0f, colSelectedBg);
-            uiDrawRectOutline(6.0f, itemY - 2.0f, 178.0f, 13.0f, 1.0f, colSelectedBorder);
+            // Fondo resaltado dorado suave
+            uiDrawRect(9.0f, itemY - 1.0f, 146.0f, 13.0f, uiColorRGBA(60, 50, 22, 255));
+            uiDrawRectOutline(9.0f, itemY - 1.0f, 146.0f, 13.0f, 1.0f, colAmber);
         }
-
-        std::string fileName = (i < (int) files.size()) ? files[i] : "";
-        bool isDir = (i < (int) flags.size()) && ((flags[i] & 1) != 0);      // FLAG_DIRECTORY
-        bool isSuspended = (i < (int) flags.size()) && ((flags[i] & 2) != 0);// FLAG_SUSPENDED
 
         if(isDir) {
-            fileName += "/";
-        }
-
-        if(fileName.length() > 18) {
-            fileName = fileName.substr(0, 17) + "~";
-        }
-
-        std::string displayLine = (isSelected ? "> " : "  ") + fileName;
-        if(displayLine.length() > 21) {
-            displayLine = displayLine.substr(0, 21);
-        }
-
-        u32 itemColor;
-        if(isDir) {
-            itemColor = colYellow;
-        } else if(isSuspended) {
-            itemColor = colPurple;
-        } else if(isSelected) {
-            itemColor = colWhite;
+            std::string nameTrunc = rawName;
+            if(nameTrunc.length() > 10) nameTrunc = nameTrunc.substr(0, 9) + "~";
+            std::string line = (isSelected ? "> [DIR] " : "  [DIR] ") + nameTrunc + (isSelected ? " <" : "");
+            if(line.length() > 18) line = line.substr(0, 18);
+            uiDrawText(10.0f, itemY, line.c_str(), isSelected ? colWhite : colYellow);
         } else {
-            itemColor = colCyan;
-        }
+            auto dot = rawName.find_last_of('.');
+            std::string ext = (dot != std::string::npos) ? rawName.substr(dot + 1) : "";
+            bool isGBC = (strcasecmp(ext.c_str(), "gbc") == 0 || strcasecmp(ext.c_str(), "cgb") == 0);
 
-        uiDrawText(8.0f, itemY, displayLine.c_str(), itemColor);
+            std::string baseName = (dot != std::string::npos) ? rawName.substr(0, dot) : rawName;
+            if(baseName.length() > 10) baseName = baseName.substr(0, 9) + "~";
+
+            const char* tag = isGBC ? "[CGB] " : "[DMG] ";
+            std::string line = (isSelected ? "> " : "  ") + std::string(tag) + baseName + (isSelected ? " <" : "");
+            if(line.length() > 18) line = line.substr(0, 18);
+
+            u32 itemColor = isSelected ? colWhite : (isGBC ? colYellow : colGray);
+            uiDrawText(10.0f, itemY, line.c_str(), itemColor);
+        }
     }
 
     if(numFiles == 0) {
-        uiDrawText(8.0f, 30.0f, "No files found", colDarkGray);
+        uiDrawText(16.0f, 32.0f, "Sin archivos", colDarkGray);
     } else {
-        // Indicador de barra de desplazamiento proporcional
+        // Scrollbar proporcional
         float maxScroll = chooser->getMaxScroll();
         if(maxScroll > 0.0f) {
             const float trackY = 24.0f;
-            const float trackH = 184.0f;
-            float totalH = (float) numFiles * 14.0f;
-            float thumbH = trackH * (188.0f / totalH);
-            if(thumbH < 12.0f) {
-                thumbH = 12.0f;
-            }
+            const float trackH = 182.0f;
+            float totalH = (float)numFiles * 14.0f;
+            float thumbH = trackH * (182.0f / totalH);
+            if(thumbH < 10.0f) thumbH = 10.0f;
             float thumbY = trackY + (scrollY / maxScroll) * (trackH - thumbH);
-            if(thumbY < trackY) {
-                thumbY = trackY;
-            }
-            if(thumbY + thumbH > trackY + trackH) {
-                thumbY = trackY + trackH - thumbH;
-            }
-            uiDrawRect(184.0f, thumbY, 2.0f, thumbH, colBorder);
+            if(thumbY < trackY) thumbY = trackY;
+            if(thumbY + thumbH > trackY + trackH) thumbY = trackY + trackH - thumbH;
+            uiDrawRect(153.0f, thumbY, 2.0f, thumbH, colListBorder);
         }
     }
 
-    // Máscara superior para recortar limpiamente los elementos que se desplazan hacia arriba
-    uiDrawRect(4.0f, 4.0f, 184.0f, 17.0f, colPanelBg);
-    uiDrawText(8.0f, 8.0f, "ROM SELECTOR", colYellow);
-    uiDrawRect(8.0f, 20.0f, 176.0f, 1.0f, colBorder);
+    // Máscara superior e inferior para recortar desplazamientos
+    uiDrawRect(0.0f, 0.0f, 320.0f, 21.0f, colBg);
+    uiDrawText(8.0f, 6.0f, dirTitle.c_str(), colYellow);
+    uiDrawText(268.0f, 6.0f, "v1.0.9", colGray);
+    uiDrawRect(8.0f, 21.0f, 148.0f, 1.0f, colListBorder);
 
-    // 3. Preview panel (x=192, y=4, w=124, h=208)
-    uiDrawRect(192.0f, 4.0f, 124.0f, 208.0f, colPanelBg);
-    uiDrawRectOutline(192.0f, 4.0f, 124.0f, 208.0f, 1.0f, colBorder);
+    // 3. Panel Derecho - "CAPTURA DE GUARDADO" (x: 164..312, y: 22..208)
+    uiDrawRect(164.0f, 22.0f, 148.0f, 186.0f, colPanelBg);
+    uiDrawRectOutline(164.0f, 22.0f, 148.0f, 186.0f, 1.0f, colBorder);
+
+    uiDrawText(174.0f, 26.0f, "CAPTURA GUARDADO", colYellow);
+    uiDrawRect(166.0f, 37.0f, 144.0f, 1.0f, colAmber);
 
     std::string currentSelectedRom = "";
-    if(selection >= 0 && selection < numFiles && selection < (int) files.size() && selection < (int) flags.size()) {
-        bool isDir = (flags[selection] & 1) != 0;
-        if(!isDir) {
+    bool isCurrentDir = false;
+    if(selection >= 0 && selection < numFiles && selection < (int)files.size() && selection < (int)flags.size()) {
+        isCurrentDir = (flags[selection] & 1) != 0;
+        if(!isCurrentDir) {
             std::string dir = chooser->getDirectory();
             if(!dir.empty() && dir.back() != '/' && dir.back() != '\\') {
                 dir += "/";
@@ -1515,168 +1523,132 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         }
     }
 
-    const char* scStatus = scraperGetStatusText();
-    if(scStatus != nullptr && scStatus[0] != '\0') {
-        u32 scCol = UI_COLOR_CYAN;
-        if(strncmp(scStatus, "E:", 2) == 0) {
-            scCol = UI_COLOR_RGBA(255, 90, 90, 255);
-        } else if(strcmp(scStatus, "DL:OK") == 0) {
-            scCol = UI_COLOR_GREEN;
+    // Recuadro del visor (x: 176..300, y: 41..143)
+    uiDrawRect(176.0f, 41.0f, 124.0f, 102.0f, uiColorRGBA(10, 14, 22, 255));
+    uiDrawRectOutline(176.0f, 41.0f, 124.0f, 102.0f, 1.0f, uiColorRGBA(40, 60, 90, 255));
+
+    bool hasState = false;
+    bool hasSav = false;
+    struct stat stState;
+    struct stat stSav;
+    if(!currentSelectedRom.empty() && !isCurrentDir) {
+        std::string stateFile = currentSelectedRom + ".ys" + std::to_string(s_previewSlot);
+        if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
+            hasState = true;
         }
-        uiDrawText(196.0f, 8.0f, "PREVIEW", colYellow);
-        uiDrawText(256.0f, 8.0f, scStatus, scCol);
-    } else {
-        uiDrawText(196.0f, 8.0f, "ROM PREVIEW", colYellow);
-        if(scraperHasPendingCovers(currentSelectedRom)) {
-            uiDrawText(284.0f, 8.0f, "[DL]", UI_COLOR_GREEN);
+        std::string savFile = currentSelectedRom + ".sav";
+        if(stat(savFile.c_str(), &stSav) == 0 && stSav.st_size > 0) {
+            hasSav = true;
         }
     }
-    uiDrawRect(196.0f, 20.0f, 116.0f, 1.0f, colBorder);
 
-    uiDrawRectOutline(208.0f, 26.0f, 92.0f, 80.0f, 1.0f, colBorder);
+    if(hasState || hasSav) {
+        if(s_boxartLoaded && s_boxartTexAllocated) {
+            C3D_TexBind(0, &s_boxartTex);
+            C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+            C3D_TexEnvInit(env0);
+            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+            C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+            C3D_TexEnvInit(C3D_GetTexEnv(1));
+            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+            C3D_CullFace(GPU_CULL_NONE);
+            C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
-    if(selection >= 0 && selection < numFiles && selection < (int) files.size() && selection < (int) flags.size()) {
-        std::string selectedFile = files[selection];
-        bool isDir = (flags[selection] & 1) != 0;
-        bool isSuspended = (flags[selection] & 2) != 0;
+            C3D_ImmDrawBegin(GPU_TRIANGLES);
+            emitUiQuad(204.0f, 47.0f, 272.0f, 115.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+            C3D_ImmDrawEnd();
 
-        if(isDir) {
-            uiInvalidateBoxart();
-            uiDrawText(224.0f, 60.0f, "[Folder]", UI_COLOR_YELLOW);
-
-            uiDrawText(196.0f, 114.0f, "Type: Folder", UI_COLOR_YELLOW);
-            std::string dirTrunc = selectedFile;
-            if(dirTrunc.length() > 14) {
-                dirTrunc = dirTrunc.substr(0, 13) + "~";
-            }
-            uiDrawText(196.0f, 127.0f, dirTrunc.c_str(), UI_COLOR_WHITE);
-            uiDrawText(196.0f, 196.0f, "A:Open", UI_COLOR_WHITE);
-            uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
+            uiDrawRectOutline(203.0f, 46.0f, 70.0f, 70.0f, 1.0f, colAmber);
+            uiDrawText(186.0f, 124.0f, hasState ? "Estado OK" : "SRAM OK", colGreen);
         } else {
-            std::string fullPath = currentSelectedRom;
-
-            std::string::size_type dot = selectedFile.find_last_of('.');
-            std::string ext = (dot != std::string::npos) ? selectedFile.substr(dot + 1) : "";
-            bool isGBC = (strcasecmp(ext.c_str(), "gbc") == 0 || strcasecmp(ext.c_str(), "cgb") == 0);
-
-            if(scraperCheckCoverReady(fullPath)) {
-                uiInvalidateBoxart();
-            }
-
-            uiUpdateBoxart(fullPath.c_str(), nullptr, 0, isGBC);
-            if(s_show3DArt) {
-                uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
-            } else if(s_boxartLoaded && s_boxartTexAllocated) {
-                C3D_TexBind(0, &s_boxartTex);
-                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-                C3D_TexEnvInit(env0);
-                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-                C3D_TexEnvInit(C3D_GetTexEnv(1));
-                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-                C3D_CullFace(GPU_CULL_NONE);
-                C3D_AlphaTest(false, GPU_ALWAYS, 0);
-
-                C3D_ImmDrawBegin(GPU_TRIANGLES);
-                emitUiQuad(226.0f, 38.0f, 282.0f, 94.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-                C3D_ImmDrawEnd();
-                uiDrawRectOutline(225.0f, 37.0f, 58.0f, 58.0f, 1.0f, UI_COLOR_YELLOW);
-            } else {
-                uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
-            }
-
-            // Línea 1 (y=114): Título limpio del juego (máx 14 chars)
-            std::string dispTitle = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : selectedFile;
-            if(dispTitle.length() > 14) {
-                dispTitle = dispTitle.substr(0, 13) + "~";
-            }
-            uiDrawText(196.0f, 114.0f, dispTitle.c_str(), UI_COLOR_WHITE);
-
-            // Línea 2 (y=127): Publisher y Región
-            char line2[16];
-            if(s_metaLoaded) {
-                snprintf(line2, sizeof(line2), "%.9s (%.2s)", s_currentMeta.publisher.c_str(), s_currentMeta.region.c_str());
-            } else {
-                snprintf(line2, sizeof(line2), "Reading...");
-            }
-            line2[14] = '\0';
-            uiDrawText(196.0f, 127.0f, line2, UI_COLOR_YELLOW);
-
-            // Línea 3 (y=140): Año y Género
-            char line3[16];
-            if(s_metaLoaded) {
-                if(s_currentMeta.year > 0) {
-                    snprintf(line3, sizeof(line3), "%d | %.7s", s_currentMeta.year, s_currentMeta.genre.c_str());
-                } else {
-                    snprintf(line3, sizeof(line3), "---- | %.7s", s_currentMeta.genre.c_str());
-                }
-            } else {
-                snprintf(line3, sizeof(line3), "---- | Clasico");
-            }
-            line3[14] = '\0';
-            uiDrawText(196.0f, 140.0f, line3, UI_COLOR_GRAY);
-
-            // Línea 4 (y=153): Hardware compacto
-            char line4[16];
-            if(s_metaLoaded) {
-                std::string mbcShort = s_currentMeta.mbcName.substr(0, 4);
-                int romM = s_currentMeta.romSizeKB >= 1024 ? s_currentMeta.romSizeKB / 1024 : s_currentMeta.romSizeKB;
-                const char* unit = s_currentMeta.romSizeKB >= 1024 ? "M" : "K";
-                snprintf(line4, sizeof(line4), "%s %d%s %s", mbcShort.c_str(), romM, unit, s_currentMeta.hasBattery ? "BAT" : "");
-            } else {
-                snprintf(line4, sizeof(line4), "%s", isGBC ? "CGB Hardware" : "DMG Hardware");
-            }
-            line4[14] = '\0';
-            uiDrawText(196.0f, 153.0f, line4, UI_COLOR_CYAN);
-
-            // Línea 5 (y=166): Savefile
-            char line5[16];
-            if(s_metaLoaded) {
-                snprintf(line5, sizeof(line5), "Sav: %s", s_currentMeta.saveDate.c_str());
-            } else {
-                snprintf(line5, sizeof(line5), "Sav: ...");
-            }
-            line5[14] = '\0';
-            uiDrawText(196.0f, 166.0f, line5, (s_metaLoaded && s_currentMeta.hasSave) ? UI_COLOR_GREEN : UI_COLOR_DARKGRAY);
-
-            // Línea 6 (y=180): Tipo de ROM
-            if(isSuspended) {
-                uiDrawText(196.0f, 180.0f, "State: Saved", UI_COLOR_PURPLE);
-            } else if(s_metaLoaded ? s_currentMeta.isGBC : isGBC) {
-                uiDrawText(196.0f, 180.0f, "Type: GBC ROM", UI_COLOR_YELLOW);
-            } else if(s_metaLoaded && s_currentMeta.isSGB) {
-                uiDrawText(196.0f, 180.0f, "Type: SGB ROM", UI_COLOR_YELLOW);
-            } else {
-                uiDrawText(196.0f, 180.0f, "Type: DMG ROM", UI_COLOR_GRAY);
-            }
-
-            // Línea 7 (y=196): "A:Play  B:Back"
-            uiDrawText(196.0f, 196.0f, "A:Play", UI_COLOR_WHITE);
-            uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
+            bool isGBC = (currentSelectedRom.find(".gbc") != std::string::npos || currentSelectedRom.find(".cgb") != std::string::npos);
+            u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
+            uiDrawRect(208.0f, 48.0f, 60.0f, 68.0f, colCart);
+            uiDrawRectOutline(208.0f, 48.0f, 60.0f, 68.0f, 1.0f, colAmber);
+            uiDrawText(214.0f, 64.0f, isGBC ? "CGB" : "DMG", colWhite);
+            uiDrawText(186.0f, 124.0f, hasState ? "Estado OK" : "SRAM OK", colGreen);
         }
     } else {
-        uiInvalidateBoxart();
-        uiDrawText(220.0f, 60.0f, "[No Cover]", UI_COLOR_DARKGRAY);
-        uiDrawText(196.0f, 114.0f, "No selection", UI_COLOR_DARKGRAY);
-        uiDrawText(196.0f, 196.0f, "A:Play", UI_COLOR_WHITE);
-        uiDrawText(260.0f, 196.0f, "B:Back", UI_COLOR_GRAY);
+        uiDrawText(198.0f, 78.0f, "Sin Partida", colGray);
+        uiDrawText(192.0f, 96.0f, "Slot no creado", colDarkGray);
     }
 
-    // 4. Bottom dock (4 buttons from x=4..316, y=216..236)
-    const float btnW = 75.0f;
-    const float btnH = 20.0f;
-    const float btnY = 216.0f;
+    // Selector de Slots (y: 152)
+    uiDrawText(184.0f, 152.0f, "<", colYellow);
+    char slotBuf[16];
+    snprintf(slotBuf, sizeof(slotBuf), "Slot %d", s_previewSlot);
+    uiDrawText(198.0f, 152.0f, slotBuf, colWhite);
+    uiDrawText(248.0f, 152.0f, ">", colYellow);
 
-    const float btnX[4] = { 4.0f, 83.0f, 162.0f, 241.0f };
-    const char* btnLabels[4] = { "FILES", "CONFIG", "CHEATS", "RESET" };
-    const float labelOffsetsX[4] = { 21.0f, 98.0f, 177.0f, 261.0f };
-
-    for(int i = 0; i < 4; i++) {
-        uiDrawRect(btnX[i], btnY, btnW, btnH, colDockBtnBg);
-        uiDrawRectOutline(btnX[i], btnY, btnW, btnH, 1.0f, colBorder);
-        uiDrawText(labelOffsetsX[i], btnY + 6.0f, btnLabels[i], colWhite);
+    if(hasState) {
+        uiDrawText(262.0f, 152.0f, "[SAV]", colGreen);
+    } else if(hasSav) {
+        uiDrawText(258.0f, 152.0f, "[SRAM]", colCyan);
+    } else {
+        uiDrawText(262.0f, 152.0f, "[---]", colDarkGray);
     }
 
+    // Línea de Fecha (y: 172)
+    if(hasState && stState.st_mtime > 0) {
+        struct tm* ti = localtime(&stState.st_mtime);
+        char dateBuf[24];
+        if(ti != nullptr) {
+            snprintf(dateBuf, sizeof(dateBuf), "%02d/%02d/%04d-%02d:%02d",
+                     ti->tm_mday, ti->tm_mon + 1, ti->tm_year + 1900, ti->tm_hour, ti->tm_min);
+        } else {
+            snprintf(dateBuf, sizeof(dateBuf), "State %d KB", (int)(stState.st_size / 1024));
+        }
+        uiDrawText(172.0f, 172.0f, dateBuf, colGray);
+    } else if(hasSav && stSav.st_mtime > 0) {
+        struct tm* ti = localtime(&stSav.st_mtime);
+        char dateBuf[24];
+        if(ti != nullptr) {
+            snprintf(dateBuf, sizeof(dateBuf), "%02d/%02d/%04d-%02d:%02d",
+                     ti->tm_mday, ti->tm_mon + 1, ti->tm_year + 1900, ti->tm_hour, ti->tm_min);
+        } else {
+            snprintf(dateBuf, sizeof(dateBuf), "SRAM %d KB", (int)(stSav.st_size / 1024));
+        }
+        uiDrawText(172.0f, 172.0f, dateBuf, colGray);
+    } else {
+        uiDrawText(192.0f, 172.0f, "- Sin Fecha -", colDarkGray);
+    }
+
+    // Línea de atajos (y: 190)
+    uiDrawText(180.0f, 190.0f, "[A] Iniciar ROM", colWhite);
+
+    // 4. Dock Inferior Temático (y: 212..236)
+    // Botón 1 (x: 6..78): Marco Cian (RGB: 30, 180, 210) con texto "[Display]"
+    const u32 colBtn1Border = uiColorRGBA(30, 180, 210, 255);
+    const u32 colBtn1Bg = uiColorRGBA(15, 35, 45, 255);
+    const u32 colBtn1Text = uiColorRGBA(30, 220, 240, 255);
+    uiDrawRect(6.0f, 212.0f, 72.0f, 24.0f, colBtn1Bg);
+    uiDrawRectOutline(6.0f, 212.0f, 72.0f, 24.0f, 1.0f, colBtn1Border);
+    uiDrawText(6.0f, 220.0f, "[Display]", colBtn1Text);
+
+    // Botón 2 (x: 82..154): Marco Naranja (RGB: 230, 130, 30) con texto "[Paleta]"
+    const u32 colBtn2Border = uiColorRGBA(230, 130, 30, 255);
+    const u32 colBtn2Bg = uiColorRGBA(45, 30, 15, 255);
+    const u32 colBtn2Text = uiColorRGBA(255, 170, 50, 255);
+    uiDrawRect(82.0f, 212.0f, 72.0f, 24.0f, colBtn2Bg);
+    uiDrawRectOutline(82.0f, 212.0f, 72.0f, 24.0f, 1.0f, colBtn2Border);
+    uiDrawText(86.0f, 220.0f, "[Paleta]", colBtn2Text);
+
+    // Botón 3 (x: 158..238): Marco Azul (RGB: 40, 120, 220) con texto "[Carpeta]"
+    const u32 colBtn3Border = uiColorRGBA(40, 120, 220, 255);
+    const u32 colBtn3Bg = uiColorRGBA(15, 25, 48, 255);
+    const u32 colBtn3Text = uiColorRGBA(80, 160, 255, 255);
+    uiDrawRect(158.0f, 212.0f, 80.0f, 24.0f, colBtn3Bg);
+    uiDrawRectOutline(158.0f, 212.0f, 80.0f, 24.0f, 1.0f, colBtn3Border);
+    uiDrawText(162.0f, 220.0f, "[Carpeta]", colBtn3Text);
+
+    // Botón 4 (x: 242..314): Marco y Fondo Rojo (RGB: 180, 40, 40) con texto "[X Salir]"
+    const u32 colBtn4Border = uiColorRGBA(220, 60, 60, 255);
+    const u32 colBtn4Bg = uiColorRGBA(180, 40, 40, 255);
+    uiDrawRect(242.0f, 212.0f, 72.0f, 24.0f, colBtn4Bg);
+    uiDrawRectOutline(242.0f, 212.0f, 72.0f, 24.0f, 1.0f, colBtn4Border);
+    uiDrawText(242.0f, 220.0f, "[X Salir]", colWhite);
+
+    // Reset TexEnv para dejar el pipeline limpio
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env0);
     C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);

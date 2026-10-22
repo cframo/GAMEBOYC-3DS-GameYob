@@ -44,6 +44,10 @@ void uiToggleSynopsis();
 bool uiIs3DArtEnabled();
 bool uiIsSynopsisEnabled();
 
+int uiGetPreviewSlot();
+void uiSetPreviewSlot(int slot);
+void uiCyclePreviewSlot(int delta);
+
 void uiOpenConfigModal(UiModalTab initialTab = UI_TAB_GAME);
 bool uiIsConfigModalOpen();
 bool uiUpdateConfigModal();
