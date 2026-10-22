@@ -8,6 +8,7 @@
 
 #ifdef BACKEND_3DS
 #include <3ds.h>
+#include "platform/3ds/ui_renderer.h"
 #endif
 
 #include "libs/stb_image/stb_image.h"
@@ -979,47 +980,10 @@ void mgrRun() {
 
         if(menuOn) {
 #ifdef BACKEND_3DS
-            u32 kDown = hidKeysDown();
-            // B, R o START reanudan la partida inmediatamente
-            if(kDown & (KEY_B | KEY_R | KEY_START)) {
+            if(!uiUpdateConfigModal()) {
                 menuOn = false;
                 mgrUnpause();
                 inputReleaseAll();
-            } else if(kDown & KEY_X) {
-                // X abre el selector de ROMs
-                menuOn = false;
-                mgrUnpause();
-                mgrSelectRom();
-                return;
-            } else if(kDown & KEY_Y) {
-                // Y reinicia el juego actual
-                menuOn = false;
-                mgrUnpause();
-                mgrReset();
-                return;
-            } else if(kDown & KEY_TOUCH) {
-                touchPosition touch;
-                hidTouchRead(&touch);
-                // Si toca el botón FILES del dock (x: 4..79, y: 216..236) -> abrir selector de ROMs
-                if(touch.px >= 4 && touch.px <= 79 && touch.py >= 216 && touch.py <= 236) {
-                    menuOn = false;
-                    mgrUnpause();
-                    mgrSelectRom();
-                    return;
-                }
-                // Si toca el botón RESET del dock (x: 241..316, y: 216..236) -> reiniciar ROM
-                else if(touch.px >= 241 && touch.px <= 316 && touch.py >= 216 && touch.py <= 236) {
-                    menuOn = false;
-                    mgrUnpause();
-                    mgrReset();
-                    return;
-                }
-                // Tocar en el panel superior/central reanuda el juego
-                else if(touch.py < 210) {
-                    menuOn = false;
-                    mgrUnpause();
-                    inputReleaseAll();
-                }
             }
             gspWaitForVBlank();
             gfxDrawScreen();
@@ -1096,11 +1060,28 @@ void mgrRun() {
             }
 
 #ifdef BACKEND_3DS
-            if((inputKeyPressed(FUNC_KEY_MENU) || inputKeyPressed(FUNC_KEY_MENU_PAUSE) || (hidKeysDown() & (KEY_R | KEY_TOUCH)))) {
+            u32 kDown = hidKeysDown();
+            if(inputKeyPressed(FUNC_KEY_MENU) || inputKeyPressed(FUNC_KEY_MENU_PAUSE) || (kDown & KEY_R)) {
                 mgrPause();
                 audioClear();
                 mgrSetFastForward(false);
                 menuOn = true;
+                uiOpenConfigModal(UI_TAB_GAME);
+                inputReleaseAll();
+            } else if(kDown & KEY_TOUCH) {
+                touchPosition touch;
+                hidTouchRead(&touch);
+                mgrPause();
+                audioClear();
+                mgrSetFastForward(false);
+                menuOn = true;
+                if(touch.py >= 216 && touch.py <= 236 && touch.px >= 83 && touch.px <= 158) {
+                    uiOpenConfigModal(UI_TAB_VIDEO);
+                } else if(touch.py >= 216 && touch.py <= 236 && touch.px >= 162 && touch.px <= 237) {
+                    uiOpenConfigModal(UI_TAB_CHEATS);
+                } else {
+                    uiOpenConfigModal(UI_TAB_GAME);
+                }
                 inputReleaseAll();
             }
 #else

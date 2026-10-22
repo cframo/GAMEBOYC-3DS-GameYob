@@ -9,6 +9,7 @@
 
 #ifdef BACKEND_3DS
 #include <3ds.h>
+#include "platform/3ds/ui_renderer.h"
 #endif
 
 #include "platform/common/menu/filechooser.h"
@@ -529,6 +530,14 @@ bool FileChooser::updateChooser(char** result) {
     this->updatePhysics();
 
     hidScanInput();
+
+    if(uiIsConfigModalOpen()) {
+        if(!uiUpdateConfigModal()) {
+            this->refreshContents();
+        }
+        return false;
+    }
+
     u32 kDown = hidKeysDown();
     u32 kHeld = hidKeysHeld();
     u32 kUp = hidKeysUp();
@@ -583,6 +592,10 @@ bool FileChooser::updateChooser(char** result) {
             // Botón FILES (4..79), CONFIG (83..158), CHEATS (162..237), RESET (241..316)
             if(this->touchStartPos.px >= 4 && this->touchStartPos.px <= 79) {
                 this->refreshContents();
+            } else if(this->touchStartPos.px >= 83 && this->touchStartPos.px <= 158) {
+                uiOpenConfigModal(UI_TAB_VIDEO);
+            } else if(this->touchStartPos.px >= 162 && this->touchStartPos.px <= 237) {
+                uiOpenConfigModal(UI_TAB_CHEATS);
             } else if(this->touchStartPos.px >= 241 && this->touchStartPos.px <= 316) {
                 mgrReset();
                 *result = nullptr;

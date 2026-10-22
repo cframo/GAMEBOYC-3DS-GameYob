@@ -16,8 +16,13 @@
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/manager.h"
 #include "platform/common/rom_metadata.h"
+#include "platform/common/menu/menu.h"
+#include "platform/common/config.h"
+#include "platform/common/cheatengine.h"
 #include "platform/3ds/scraper_worker.h"
 #include "platform/3ds/ui_renderer.h"
+#include "platform/input.h"
+#include "gameboy.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -732,69 +737,560 @@ void uiDrawBoxart3D(float centerX, float centerY, float size) {
     C3D_TexEnvInit(C3D_GetTexEnv(1));
 }
 
-void uiDrawWireframeTest() {
+// =============================================================================
+// MODAL GRÁFICO INTERACTIVO (Hito 5.6)
+// =============================================================================
+
+static bool s_modalOpen = false;
+static UiModalTab s_currentTab = UI_TAB_GAME;
+static int s_selectedOption = 0;
+static int s_cheatScroll = 0;
+
+static char s_modalMessage[32] = "";
+static u32 s_modalMessageColor = UI_COLOR_GREEN;
+static u64 s_modalMessageTime = 0;
+
+static void setModalMessage(const char* msg, u32 color = UI_COLOR_GREEN) {
+    strncpy(s_modalMessage, msg, sizeof(s_modalMessage) - 1);
+    s_modalMessage[sizeof(s_modalMessage) - 1] = '\0';
+    s_modalMessageColor = color;
+    s_modalMessageTime = osGetTime();
+}
+
+bool uiIsConfigModalOpen() {
+    return s_modalOpen;
+}
+
+void uiOpenConfigModal(UiModalTab initialTab) {
+    s_modalOpen = true;
+    s_currentTab = initialTab;
+    s_selectedOption = 0;
+    s_cheatScroll = 0;
+    s_modalMessage[0] = '\0';
+}
+
+static int getNumOptionsForTab(UiModalTab tab) {
+    if(tab == UI_TAB_GAME) return 6;
+    if(tab == UI_TAB_VIDEO) return 6;
+    if(tab == UI_TAB_SYSTEM) return 6;
+    if(tab == UI_TAB_CHEATS) {
+        return (cheatEngine != nullptr) ? cheatEngine->getNumCheats() : 0;
+    }
+    return 0;
+}
+
+static bool triggerModalOption(int opt, int dir, bool isTouch) {
+    (void) isTouch;
+    if(s_currentTab == UI_TAB_GAME) {
+        if(opt == 0) {
+            // Resume Game
+            configSave();
+            s_modalOpen = false;
+            menuOn = false;
+            if(!isFileChooserActive()) {
+                mgrUnpause();
+                inputReleaseAll();
+            }
+            return false;
+        } else if(opt == 1) {
+            // State Slot
+            stateNum = (dir < 0) ? ((stateNum + 9) % 10) : ((stateNum + 1) % 10);
+            setMenuOption("State Slot", stateNum);
+            return true;
+        } else if(opt == 2) {
+            // Save State
+            bool ok = mgrSaveState(stateNum);
+            setModalMessage(ok ? "State Saved!" : "Save Failed!", ok ? UI_COLOR_GREEN : UI_COLOR_RGBA(255, 90, 90, 255));
+            return true;
+        } else if(opt == 3) {
+            // Load State
+            if(mgrStateExists(stateNum)) {
+                bool ok = mgrLoadState(stateNum);
+                if(ok) {
+                    setModalMessage("State Loaded!", UI_COLOR_GREEN);
+                    configSave();
+                    s_modalOpen = false;
+                    menuOn = false;
+                    if(!isFileChooserActive()) {
+                        mgrUnpause();
+                        inputReleaseAll();
+                    }
+                    return false;
+                } else {
+                    setModalMessage("Load Failed!", UI_COLOR_RGBA(255, 90, 90, 255));
+                }
+            } else {
+                setModalMessage("Slot is Empty!", UI_COLOR_YELLOW);
+            }
+            return true;
+        } else if(opt == 4) {
+            // Delete State
+            if(mgrStateExists(stateNum)) {
+                mgrDeleteState(stateNum);
+                setModalMessage("State Deleted!", UI_COLOR_PURPLE);
+            } else {
+                setModalMessage("Slot is Empty!", UI_COLOR_YELLOW);
+            }
+            return true;
+        } else if(opt == 5) {
+            // Suspend & Exit
+            if(gameboy != nullptr && gameboy->isPoweredOn()) {
+                mgrSaveState(-1);
+            }
+            configSave();
+            s_modalOpen = false;
+            menuOn = false;
+            if(!isFileChooserActive()) {
+                mgrUnpause();
+            }
+            mgrSelectRom();
+            return false;
+        }
+    } else if(s_currentTab == UI_TAB_VIDEO) {
+        if(opt == 0) {
+            // Scaling (0..4)
+            int val = getMenuOption("Scaling");
+            val = (dir < 0) ? ((val + 4) % 5) : ((val + 1) % 5);
+            setMenuOption("Scaling", val);
+            return true;
+        } else if(opt == 1) {
+            // Scale Filter (0..2)
+            int val = getMenuOption("Scale Filter");
+            val = (dir < 0) ? ((val + 2) % 3) : ((val + 1) % 3);
+            setMenuOption("Scale Filter", val);
+            return true;
+        } else if(opt == 2) {
+            // LCD Grid (0..1)
+            int val = getMenuOption("LCD Grid") ^ 1;
+            setMenuOption("LCD Grid", val);
+            return true;
+        } else if(opt == 3) {
+            // LCD Ghosting (0..1)
+            int val = getMenuOption("LCD Ghosting") ^ 1;
+            setMenuOption("LCD Ghosting", val);
+            return true;
+        } else if(opt == 4) {
+            // Game Screen (0..1)
+            int val = getMenuOption("Game Screen") ^ 1;
+            setMenuOption("Game Screen", val);
+            return true;
+        } else if(opt == 5) {
+            // Custom Border (0..1)
+            int val = getMenuOption("Custom Borders") ^ 1;
+            setMenuOption("Custom Borders", val);
+            mgrRefreshBorder();
+            return true;
+        }
+    } else if(s_currentTab == UI_TAB_SYSTEM) {
+        if(opt == 0) {
+            // DMG Palette (0..13)
+            int val = getMenuOption("Colorize GB");
+            val = (dir < 0) ? ((val + 13) % 14) : ((val + 1) % 14);
+            setMenuOption("Colorize GB", val);
+            mgrRefreshPalette();
+            return true;
+        } else if(opt == 1) {
+            // GBC Colors (0..1)
+            int val = getMenuOption("CGB Colors") ^ 1;
+            setMenuOption("CGB Colors", val);
+            return true;
+        } else if(opt == 2) {
+            // Sound (0..1)
+            int val = getMenuOption("Master") ^ 1;
+            setMenuOption("Master", val);
+            return true;
+        } else if(opt == 3) {
+            // Fast Forward (0..1)
+            bool ff = !mgrGetFastForward();
+            mgrSetFastForward(ff);
+            return true;
+        } else if(opt == 4) {
+            // GBC Mode (0..2)
+            int val = getMenuOption("GBC Mode");
+            val = (dir < 0) ? ((val + 2) % 3) : ((val + 1) % 3);
+            setMenuOption("GBC Mode", val);
+            return true;
+        } else if(opt == 5) {
+            // SGB Mode (0..2)
+            int val = getMenuOption("SGB Mode");
+            val = (dir < 0) ? ((val + 2) % 3) : ((val + 1) % 3);
+            setMenuOption("SGB Mode", val);
+            return true;
+        }
+    } else if(s_currentTab == UI_TAB_CHEATS) {
+        int numCheats = (cheatEngine != nullptr) ? cheatEngine->getNumCheats() : 0;
+        if(numCheats > 0 && opt >= 0 && opt < numCheats) {
+            bool enabled = !cheatEngine->isCheatEnabled(opt);
+            cheatEngine->toggleCheat(opt, enabled);
+            setModalMessage(enabled ? "Cheat Enabled" : "Cheat Disabled", enabled ? UI_COLOR_GREEN : UI_COLOR_GRAY);
+        }
+        return true;
+    }
+
+    return true;
+}
+
+bool uiUpdateConfigModal() {
+    if(!s_modalOpen) {
+        return false;
+    }
+
+    u32 kDown = hidKeysDown();
+
+    // 1. Interacción táctil
+    if(kDown & KEY_TOUCH) {
+        touchPosition touch;
+        hidTouchRead(&touch);
+
+        // Barra superior de pestañas (y: 4..24)
+        if(touch.py >= 4 && touch.py <= 24) {
+            if(touch.px >= 4 && touch.px <= 81) {
+                s_currentTab = UI_TAB_GAME;
+                s_selectedOption = 0;
+                return true;
+            } else if(touch.px >= 82 && touch.px <= 159) {
+                s_currentTab = UI_TAB_VIDEO;
+                s_selectedOption = 0;
+                return true;
+            } else if(touch.px >= 160 && touch.px <= 237) {
+                s_currentTab = UI_TAB_SYSTEM;
+                s_selectedOption = 0;
+                return true;
+            } else if(touch.px >= 238 && touch.px <= 315) {
+                s_currentTab = UI_TAB_CHEATS;
+                s_selectedOption = 0;
+                return true;
+            }
+        }
+
+        // Dock inferior (y: 216..236)
+        if(touch.py >= 216 && touch.py <= 236) {
+            if(touch.px >= 4 && touch.px <= 79) {
+                // FILES
+                configSave();
+                s_modalOpen = false;
+                menuOn = false;
+                if(!isFileChooserActive()) {
+                    mgrUnpause();
+                }
+                mgrSelectRom();
+                return false;
+            } else if(touch.px >= 83 && touch.px <= 158) {
+                // CONFIG: Alternar entre VIDEO y GAME
+                if(s_currentTab == UI_TAB_VIDEO || s_currentTab == UI_TAB_SYSTEM) {
+                    s_currentTab = UI_TAB_GAME;
+                } else {
+                    s_currentTab = UI_TAB_VIDEO;
+                }
+                s_selectedOption = 0;
+                return true;
+            } else if(touch.px >= 162 && touch.px <= 237) {
+                // CHEATS: Pestaña directa de trucos
+                s_currentTab = UI_TAB_CHEATS;
+                s_selectedOption = 0;
+                return true;
+            } else if(touch.px >= 241 && touch.px <= 316) {
+                // RESET
+                configSave();
+                s_modalOpen = false;
+                menuOn = false;
+                if(!isFileChooserActive()) {
+                    mgrUnpause();
+                }
+                mgrReset();
+                return false;
+            }
+        }
+
+        // Área central de opciones (y: 28..188)
+        if(touch.py >= 28 && touch.py <= 188) {
+            int row = (touch.py - 30) / 26;
+            if(row >= 0 && row < 6) {
+                if(s_currentTab == UI_TAB_CHEATS) {
+                    int numCheats = (cheatEngine != nullptr) ? cheatEngine->getNumCheats() : 0;
+                    int idx = s_cheatScroll + row;
+                    if(idx >= 0 && idx < numCheats) {
+                        s_selectedOption = idx;
+                        return triggerModalOption(idx, 1, true);
+                    }
+                } else {
+                    s_selectedOption = row;
+                    int dir = (touch.px >= 170 && touch.px < 230) ? -1 : 1;
+                    return triggerModalOption(row, dir, true);
+                }
+            }
+        }
+    }
+
+    // 2. Botones de cambio de pestaña (L / R)
+    if(kDown & KEY_L) {
+        s_currentTab = (UiModalTab)((s_currentTab + 3) % 4);
+        s_selectedOption = 0;
+        return true;
+    }
+    if(kDown & KEY_R) {
+        s_currentTab = (UiModalTab)((s_currentTab + 1) % 4);
+        s_selectedOption = 0;
+        return true;
+    }
+
+    // 3. Navegación vertical (Up / Down)
+    int numOpts = getNumOptionsForTab(s_currentTab);
+    if(kDown & (KEY_DUP | KEY_CPAD_UP)) {
+        if(s_currentTab == UI_TAB_CHEATS) {
+            if(numOpts > 0) {
+                s_selectedOption = (s_selectedOption + numOpts - 1) % numOpts;
+                if(s_selectedOption < s_cheatScroll) s_cheatScroll = s_selectedOption;
+                if(s_selectedOption >= s_cheatScroll + 6) s_cheatScroll = s_selectedOption - 5;
+            }
+        } else if(numOpts > 0) {
+            s_selectedOption = (s_selectedOption + numOpts - 1) % numOpts;
+        }
+        return true;
+    }
+    if(kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) {
+        if(s_currentTab == UI_TAB_CHEATS) {
+            if(numOpts > 0) {
+                s_selectedOption = (s_selectedOption + 1) % numOpts;
+                if(s_selectedOption >= s_cheatScroll + 6) s_cheatScroll = s_selectedOption - 5;
+                if(s_selectedOption < s_cheatScroll) s_cheatScroll = s_selectedOption;
+            }
+        } else if(numOpts > 0) {
+            s_selectedOption = (s_selectedOption + 1) % numOpts;
+        }
+        return true;
+    }
+
+    // 4. Modificación de valor / Ejecución (Left / Right / A)
+    if(kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) {
+        if(numOpts > 0) {
+            return triggerModalOption(s_selectedOption, -1, false);
+        }
+    }
+    if(kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) {
+        if(numOpts > 0) {
+            return triggerModalOption(s_selectedOption, 1, false);
+        }
+    }
+    if(kDown & KEY_A) {
+        if(numOpts > 0) {
+            return triggerModalOption(s_selectedOption, 1, false);
+        }
+    }
+
+    // 5. Cierre y guardado (B / START)
+    if(kDown & (KEY_B | KEY_START)) {
+        configSave();
+        s_modalOpen = false;
+        menuOn = false;
+        if(!isFileChooserActive()) {
+            mgrUnpause();
+            inputReleaseAll();
+        }
+        return false;
+    }
+
+    return true;
+}
+
+void uiDrawConfigModal() {
     const u32 colBg = uiColorRGBA(24, 26, 32, 255);
     const u32 colPanelBg = uiColorRGBA(18, 20, 26, 255);
     const u32 colBorder = uiColorRGBA(64, 80, 104, 255);
+    const u32 colSelectedBg = uiColorRGBA(36, 54, 84, 255);
+    const u32 colRowBg = uiColorRGBA(24, 28, 38, 255);
+    const u32 colRowBorder = uiColorRGBA(40, 50, 68, 255);
+    const u32 colTabActiveBg = uiColorRGBA(48, 64, 96, 255);
+    const u32 colTabInactiveBg = uiColorRGBA(20, 24, 32, 255);
     const u32 colDockBtnBg = uiColorRGBA(34, 40, 52, 255);
+    const u32 colDockBtnActiveBg = uiColorRGBA(48, 64, 96, 255);
 
     const u32 colYellow = UI_COLOR_YELLOW;
     const u32 colWhite = UI_COLOR_WHITE;
     const u32 colGray = UI_COLOR_GRAY;
-    const u32 colPurple = UI_COLOR_PURPLE;
 
-    // 1. Dark background
+    // 1. Fondo oscuro
     uiDrawRect(0.0f, 0.0f, 320.0f, 240.0f, colBg);
 
-    // 2. Pause container panel (x=8, y=6, w=304, h=202)
-    uiDrawRect(8.0f, 6.0f, 304.0f, 202.0f, colPanelBg);
-    uiDrawRectOutline(8.0f, 6.0f, 304.0f, 202.0f, 1.0f, colBorder);
+    // 2. Barra de pestañas superior (y: 4..24)
+    const float tabW = 77.0f;
+    const float tabH = 20.0f;
+    const float tabY = 4.0f;
+    const float tabX[4] = { 4.0f, 82.0f, 160.0f, 238.0f };
+    const char* tabNames[4] = { "GAME", "VIDEO", "SYSTEM", "CHEATS" };
+    const float tabTextX[4] = { 26.0f, 100.0f, 172.0f, 250.0f };
 
-    // Header
-    uiDrawText(116.0f, 16.0f, "GAME PAUSED", colYellow);
-    uiDrawRect(16.0f, 30.0f, 288.0f, 1.0f, colBorder);
+    for(int t = 0; t < 4; t++) {
+        bool active = (s_currentTab == (UiModalTab)t);
+        u32 bg = active ? colTabActiveBg : colTabInactiveBg;
+        u32 border = active ? colYellow : colBorder;
+        u32 textCol = active ? colYellow : colGray;
 
-    // Current ROM info
-    std::string currentRom = mgrGetRomName();
-    if(currentRom.empty()) {
-        currentRom = "No ROM loaded";
+        uiDrawRect(tabX[t], tabY, tabW, tabH, bg);
+        uiDrawRectOutline(tabX[t], tabY, tabW, tabH, 1.0f, border);
+        uiDrawText(tabTextX[t], tabY + 6.0f, tabNames[t], textCol);
+    }
+
+    // 3. Panel contenedor central (x: 4..316, y: 26..212)
+    uiDrawRect(4.0f, 26.0f, 312.0f, 186.0f, colPanelBg);
+    uiDrawRectOutline(4.0f, 26.0f, 312.0f, 186.0f, 1.0f, colBorder);
+
+    // 4. Filas de opciones
+    if(s_currentTab == UI_TAB_CHEATS) {
+        int numCheats = (cheatEngine != nullptr) ? cheatEngine->getNumCheats() : 0;
+        if(numCheats == 0) {
+            uiDrawText(72.0f, 80.0f, "No cheats found (.cht)", colYellow);
+            uiDrawText(36.0f, 104.0f, "Place .cht file in SD root or ROM dir", colGray);
+        } else {
+            for(int r = 0; r < 6 && (s_cheatScroll + r) < numCheats; r++) {
+                int idx = s_cheatScroll + r;
+                float rowY = 30.0f + r * 26.0f;
+                bool selected = (idx == s_selectedOption);
+
+                if(selected) {
+                    uiDrawRect(9.0f, rowY, 302.0f, 24.0f, colSelectedBg);
+                    uiDrawRectOutline(9.0f, rowY, 302.0f, 24.0f, 1.0f, colYellow);
+                } else {
+                    uiDrawRect(9.0f, rowY, 302.0f, 24.0f, colRowBg);
+                    uiDrawRectOutline(9.0f, rowY, 302.0f, 24.0f, 1.0f, colRowBorder);
+                }
+
+                bool enabled = cheatEngine->isCheatEnabled(idx);
+                std::string name = cheatEngine->getCheatName(idx);
+                if(name.length() > 28) name = name.substr(0, 27) + "~";
+                char line[36];
+                snprintf(line, sizeof(line), "[%c] %s", enabled ? 'X' : ' ', name.c_str());
+                uiDrawText(18.0f, rowY + 8.0f, line, enabled ? UI_COLOR_GREEN : (selected ? colWhite : colGray));
+            }
+
+            if(s_cheatScroll > 0) {
+                uiDrawText(296.0f, 28.0f, "^", colYellow);
+            }
+            if(s_cheatScroll + 6 < numCheats) {
+                uiDrawText(296.0f, 184.0f, "v", colYellow);
+            }
+        }
     } else {
-        std::string::size_type slash = currentRom.find_last_of("/\\");
-        if(slash != std::string::npos) {
-            currentRom = currentRom.substr(slash + 1);
+        const char* labels[6];
+        char values[6][32];
+
+        if(s_currentTab == UI_TAB_GAME) {
+            labels[0] = "Resume Game";
+            snprintf(values[0], sizeof(values[0]), "[Play]");
+
+            labels[1] = "State Slot";
+            snprintf(values[1], sizeof(values[1]), "< %d > %s", stateNum, mgrStateExists(stateNum) ? "[Saved]" : "[Empty]");
+
+            labels[2] = "Save State";
+            snprintf(values[2], sizeof(values[2]), mgrStateExists(stateNum) ? "[Overwrite]" : "[Save]");
+
+            labels[3] = "Load State";
+            snprintf(values[3], sizeof(values[3]), mgrStateExists(stateNum) ? "[Ready]" : "[Empty]");
+
+            labels[4] = "Delete State";
+            snprintf(values[4], sizeof(values[4]), mgrStateExists(stateNum) ? "[Delete]" : "[None]");
+
+            labels[5] = "Suspend & Exit";
+            snprintf(values[5], sizeof(values[5]), "[Exit]");
+        } else if(s_currentTab == UI_TAB_VIDEO) {
+            labels[0] = "Scaling";
+            static const char* scaleNames[5] = {"Off", "125%", "150%", "Aspect", "Full"};
+            snprintf(values[0], sizeof(values[0]), "< %s >", scaleNames[getMenuOption("Scaling") % 5]);
+
+            labels[1] = "Scale Filter";
+            static const char* filterNames[3] = {"Nearest", "Linear", "Sharp 2x"};
+            snprintf(values[1], sizeof(values[1]), "< %s >", filterNames[getMenuOption("Scale Filter") % 3]);
+
+            labels[2] = "LCD Grid";
+            snprintf(values[2], sizeof(values[2]), getMenuOption("LCD Grid") ? "< On >" : "< Off >");
+
+            labels[3] = "LCD Ghosting";
+            snprintf(values[3], sizeof(values[3]), getMenuOption("LCD Ghosting") ? "< On >" : "< Off >");
+
+            labels[4] = "Game Screen";
+            snprintf(values[4], sizeof(values[4]), getMenuOption("Game Screen") ? "< Bottom >" : "< Top >");
+
+            labels[5] = "Custom Border";
+            snprintf(values[5], sizeof(values[5]), getMenuOption("Custom Borders") ? "< On >" : "< Off >");
+        } else { // UI_TAB_SYSTEM
+            labels[0] = "DMG Palette";
+            static const char* palNames[14] = {"Off", "Auto", "Invert", "Pastel", "Red", "Orange", "Yellow", "Green", "Blue", "Brown", "DkGreen", "DkBlue", "DkBrown", "Classic"};
+            snprintf(values[0], sizeof(values[0]), "< %s >", palNames[getMenuOption("Colorize GB") % 14]);
+
+            labels[1] = "GBC Colors";
+            snprintf(values[1], sizeof(values[1]), getMenuOption("CGB Colors") ? "< Corrected >" : "< Raw >");
+
+            labels[2] = "Sound";
+            snprintf(values[2], sizeof(values[2]), getMenuOption("Master") ? "< On >" : "< Off >");
+
+            labels[3] = "Fast Forward";
+            snprintf(values[3], sizeof(values[3]), mgrGetFastForward() ? "< On >" : "< Off >");
+
+            labels[4] = "GBC Mode";
+            static const char* gbcNames[3] = {"Off", "If Needed", "On"};
+            snprintf(values[4], sizeof(values[4]), "< %s >", gbcNames[getMenuOption("GBC Mode") % 3]);
+
+            labels[5] = "SGB Mode";
+            static const char* sgbNames[3] = {"Off", "Pref GBC", "Pref SGB"};
+            snprintf(values[5], sizeof(values[5]), "< %s >", sgbNames[getMenuOption("SGB Mode") % 3]);
+        }
+
+        for(int r = 0; r < 6; r++) {
+            float rowY = 30.0f + r * 26.0f;
+            bool selected = (r == s_selectedOption);
+
+            if(selected) {
+                uiDrawRect(9.0f, rowY, 302.0f, 24.0f, colSelectedBg);
+                uiDrawRectOutline(9.0f, rowY, 302.0f, 24.0f, 1.0f, colYellow);
+            } else {
+                uiDrawRect(9.0f, rowY, 302.0f, 24.0f, colRowBg);
+                uiDrawRectOutline(9.0f, rowY, 302.0f, 24.0f, 1.0f, colRowBorder);
+            }
+
+            uiDrawText(18.0f, rowY + 8.0f, labels[r], selected ? colWhite : colGray);
+
+            u32 valCol = UI_COLOR_CYAN;
+            if(s_currentTab == UI_TAB_GAME) {
+                if(r == 1) valCol = mgrStateExists(stateNum) ? UI_COLOR_GREEN : colGray;
+                else if(r == 0) valCol = UI_COLOR_GREEN;
+                else if(r == 5) valCol = colYellow;
+                else if(r == 4) valCol = mgrStateExists(stateNum) ? UI_COLOR_PURPLE : UI_COLOR_DARKGRAY;
+                else if(!mgrStateExists(stateNum) && (r == 3)) valCol = UI_COLOR_DARKGRAY;
+            }
+            uiDrawText(176.0f, rowY + 8.0f, values[r], valCol);
         }
     }
-    if(currentRom.length() > 28) {
-        currentRom = currentRom.substr(0, 27) + "~";
+
+    // 5. Mensaje de estado / Ayuda en parte inferior del contenedor
+    if(s_modalMessage[0] != '\0' && (osGetTime() - s_modalMessageTime < 1800)) {
+        uiDrawText(18.0f, 192.0f, s_modalMessage, s_modalMessageColor);
+    } else {
+        uiDrawText(18.0f, 192.0f, "L/R:Tab  Pad:Navigate  A/Touch:Select  B:Resume", UI_COLOR_DARKGRAY);
     }
-    uiDrawText(20.0f, 40.0f, "Current ROM:", colGray);
-    uiDrawText(20.0f, 54.0f, currentRom.c_str(), colWhite);
 
-    uiDrawRect(16.0f, 72.0f, 288.0f, 1.0f, colBorder);
-
-    // Instructions
-    uiDrawText(20.0f, 86.0f, "B / R / Touch: Resume Game", colWhite);
-    uiDrawText(20.0f, 108.0f, "X / [FILES]  : Change ROM", colYellow);
-    uiDrawText(20.0f, 130.0f, "Y / [RESET]  : Reset Game", colPurple);
-
-    uiDrawText(20.0f, 166.0f, "Tap screen or press B/R to resume", colGray);
-
-    // 3. Bottom dock (4 buttons from x=4..316, y=216..236)
+    // 6. Dock inferior (y: 216..236)
     const float btnW = 75.0f;
     const float btnH = 20.0f;
     const float btnY = 216.0f;
-
     const float btnX[4] = { 4.0f, 83.0f, 162.0f, 241.0f };
     const char* btnLabels[4] = { "FILES", "CONFIG", "CHEATS", "RESET" };
     const float labelOffsetsX[4] = { 21.0f, 98.0f, 177.0f, 261.0f };
 
     for(int i = 0; i < 4; i++) {
-        uiDrawRect(btnX[i], btnY, btnW, btnH, colDockBtnBg);
-        uiDrawRectOutline(btnX[i], btnY, btnW, btnH, 1.0f, colBorder);
-        uiDrawText(labelOffsetsX[i], btnY + 6.0f, btnLabels[i], colWhite);
+        bool active = false;
+        if(i == 1 && s_currentTab != UI_TAB_CHEATS) active = true;
+        if(i == 2 && s_currentTab == UI_TAB_CHEATS) active = true;
+
+        u32 bg = active ? colDockBtnActiveBg : colDockBtnBg;
+        u32 border = active ? colYellow : colBorder;
+        u32 textCol = active ? colYellow : colWhite;
+
+        uiDrawRect(btnX[i], btnY, btnW, btnH, bg);
+        uiDrawRectOutline(btnX[i], btnY, btnW, btnH, 1.0f, border);
+        uiDrawText(labelOffsetsX[i], btnY + 6.0f, btnLabels[i], textCol);
     }
 
-    // Reset TexEnv to standard state
+    // Reset TexEnv para dejar el pipeline limpio
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env0);
     C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
@@ -806,6 +1302,10 @@ void uiDrawWireframeTest() {
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
     C3D_DepthTest(true, GPU_GEQUAL, GPU_WRITE_ALL);
     C3D_CullFace(GPU_CULL_NONE);
+}
+
+void uiDrawWireframeTest() {
+    uiDrawConfigModal();
 }
 
 void uiDrawFileChooser(const FileChooser* chooser) {

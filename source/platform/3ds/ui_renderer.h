@@ -19,6 +19,13 @@ static inline u32 uiColorRGBA(u8 r, u8 g, u8 b, u8 a = 255) {
 
 class FileChooser;
 
+enum UiModalTab {
+    UI_TAB_GAME = 0,
+    UI_TAB_VIDEO = 1,
+    UI_TAB_SYSTEM = 2,
+    UI_TAB_CHEATS = 3
+};
+
 const C3D_Mtx* gfxGetProjectionBottom();
 int gfxGetULocProjection();
 
@@ -29,6 +36,11 @@ void uiDrawRectOutline(float x, float y, float w, float h, float thickness, u32 
 void uiDrawText(float x, float y, const char* str, u32 color);
 void uiDrawWireframeTest();
 void uiDrawFileChooser(const FileChooser* chooser);
+
+void uiOpenConfigModal(UiModalTab initialTab = UI_TAB_GAME);
+bool uiIsConfigModalOpen();
+bool uiUpdateConfigModal();
+void uiDrawConfigModal();
 
 void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC);
 void uiDrawBoxart3D(float centerX, float centerY, float size);

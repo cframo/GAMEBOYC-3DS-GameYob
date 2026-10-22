@@ -922,12 +922,18 @@ void gfxDrawScreen() {
     }
     }
 
-    if(!menuOn && !isFileChooserActive()) {
+    if(!menuOn && !isFileChooserActive() && !uiIsConfigModalOpen()) {
         if(gameScreen == 0 && s_bottomClearCount > 0) {
             C3D_FrameDrawOn(targetBottom);
             C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x000000FF, 0);
             s_bottomClearCount--;
         }
+    } else if(uiIsConfigModalOpen()) {
+        s_bottomClearCount = 2;
+        C3D_FrameDrawOn(targetBottom);
+        C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x181A20FF, 0);
+        C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionBottom);
+        uiDrawConfigModal();
     } else if(isFileChooserActive() && getActiveFileChooser() != nullptr) {
         s_bottomClearCount = 2;
         C3D_FrameDrawOn(targetBottom);
@@ -939,7 +945,7 @@ void gfxDrawScreen() {
         C3D_FrameDrawOn(targetBottom);
         C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x181A20FF, 0);
         C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionBottom);
-        uiDrawWireframeTest();
+        uiDrawConfigModal();
     }
 
     C3D_FrameEnd(0);
