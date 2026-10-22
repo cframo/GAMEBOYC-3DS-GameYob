@@ -36,6 +36,7 @@ void uiDrawRectOutline(float x, float y, float w, float h, float thickness, u32 
 void uiDrawText(float x, float y, const char* str, u32 color);
 void uiDrawWireframeTest();
 void uiDrawFileChooser(const FileChooser* chooser);
+void uiDrawTopScreenHub();
 
 void uiOpenConfigModal(UiModalTab initialTab = UI_TAB_GAME);
 bool uiIsConfigModalOpen();
