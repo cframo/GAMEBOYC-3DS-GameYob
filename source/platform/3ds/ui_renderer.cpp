@@ -177,9 +177,6 @@ static const u8 font8x8_basic[128][8] = {
 static C3D_Tex s_fontTex;
 static bool s_fontInit = false;
 
-static C3D_Tex s_shadowTex;
-static bool s_shadowTexInit = false;
-
 static inline void emitUiQuad(float x1, float y1, float x2, float y2, float u1, float v1, float u2, float v2) {
     C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
@@ -239,47 +236,6 @@ void uiRenderInit() {
 
     s_fontInit = true;
 
-    // Shadow texture 32x32 RGBA8 for smooth drop shadow penumbra
-    if(!s_shadowTexInit) {
-        if(C3D_TexInit(&s_shadowTex, 32, 32, GPU_RGBA8)) {
-            u32* tempS = (u32*) linearAlloc(32 * 32 * sizeof(u32));
-            if(tempS != nullptr) {
-                for(int y = 0; y < 32; y++) {
-                    for(int x = 0; x < 32; x++) {
-                        // (31, 31) is inner (alpha = 1.0), (0, 0) is outer (alpha = 0.0)
-                        float u = (float) x / 31.0f;
-                        float v = (float) y / 31.0f;
-                        float dx = 1.0f - u;
-                        float dy = 1.0f - v;
-                        float d = sqrtf(dx * dx + dy * dy);
-                        float a = 0.0f;
-                        if(d < 1.0f) {
-                            a = 1.0f - d;
-                            // Smoothstep
-                            a = a * a * (3.0f - 2.0f * a);
-                        }
-                        u8 alpha = (u8) (a * 255.0f + 0.5f);
-                        tempS[y * 32 + x] = ((u32) alpha << 24) | 0x000000;
-                    }
-                }
-                GSPGPU_FlushDataCache(tempS, 32 * 32 * sizeof(u32));
-                C3D_SyncDisplayTransfer(
-                    tempS, GX_BUFFER_DIM(32, 32),
-                    (u32*) s_shadowTex.data, GX_BUFFER_DIM(32, 32),
-                    GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
-                    GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
-                    GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
-                );
-                linearFree(tempS);
-
-                GSPGPU_InvalidateDataCache(s_shadowTex.data, s_shadowTex.size);
-                C3D_TexSetFilter(&s_shadowTex, GPU_LINEAR, GPU_LINEAR);
-                C3D_TexSetWrap(&s_shadowTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
-                s_shadowTexInit = true;
-            }
-        }
-    }
-
     // Boxart texture 128x128 RGBA8
     if(!s_boxartTexAllocated) {
         if(C3D_TexInit(&s_boxartTex, 128, 128, GPU_RGBA8)) {
@@ -326,10 +282,6 @@ void uiRenderExit() {
         C3D_TexDelete(&s_fontTex);
         s_fontInit = false;
     }
-    if(s_shadowTexInit) {
-        C3D_TexDelete(&s_shadowTex);
-        s_shadowTexInit = false;
-    }
     if(s_boxartTexAllocated) {
         C3D_TexDelete(&s_boxartTex);
         s_boxartTexAllocated = false;
@@ -345,7 +297,11 @@ void uiDrawRect(float x, float y, float w, float h, u32 color) {
     }
 
     if((color & 0xFF000000) == 0) {
-        color |= 0xFF000000;
+        if((color & 0x00FFFFFF) != 0) {
+            color |= 0xFF000000;
+        } else {
+            return;
+        }
     }
 
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
@@ -372,7 +328,11 @@ void uiDrawRectOutline(float x, float y, float w, float h, float thickness, u32 
     }
 
     if((color & 0xFF000000) == 0) {
-        color |= 0xFF000000;
+        if((color & 0x00FFFFFF) != 0) {
+            color |= 0xFF000000;
+        } else {
+            return;
+        }
     }
 
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
@@ -401,51 +361,26 @@ void uiDrawRectOutline(float x, float y, float w, float h, float thickness, u32 
 }
 
 void uiDrawDropShadow(float x, float y, float w, float h, float radius, u8 maxAlpha) {
-    if(w <= 0.0f || h <= 0.0f || radius <= 0.0f || maxAlpha == 0 || !s_shadowTexInit) {
+    if(w <= 0.0f || h <= 0.0f || radius <= 0.0f || maxAlpha == 0) {
         return;
     }
 
-    C3D_TexBind(0, &s_shadowTex);
-
-    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-    C3D_TexEnvInit(env0);
-    C3D_TexEnvSrc(env0, C3D_RGB, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-    C3D_TexEnvFunc(env0, C3D_RGB, GPU_REPLACE);
-    C3D_TexEnvSrc(env0, C3D_Alpha, GPU_TEXTURE0, GPU_CONSTANT, (GPU_TEVSRC)0);
-    C3D_TexEnvFunc(env0, C3D_Alpha, GPU_MODULATE);
-    C3D_TexEnvColor(env0, ((u32) maxAlpha << 24));
-
-    C3D_TexEnvInit(C3D_GetTexEnv(1));
-
-    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-    C3D_CullFace(GPU_CULL_NONE);
-    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
-    C3D_AlphaTest(true, GPU_GREATER, 0);
-
-    float r = radius;
-    C3D_ImmDrawBegin(GPU_TRIANGLES);
-
-    // 4 Esquinas
-    // Top-Left: [x - r, y - r] a [x, y], u: 0..1, v: 0..1
-    emitUiQuad(x - r, y - r, x, y, 0.0f, 0.0f, 1.0f, 1.0f);
-    // Top-Right: [x + w, y - r] a [x + w + r, y], u: 1..0, v: 0..1
-    emitUiQuad(x + w, y - r, x + w + r, y, 1.0f, 0.0f, 0.0f, 1.0f);
-    // Bottom-Left: [x - r, y + h] a [x, y + h + r], u: 0..1, v: 1..0
-    emitUiQuad(x - r, y + h, x, y + h + r, 0.0f, 1.0f, 1.0f, 0.0f);
-    // Bottom-Right: [x + w, y + h] a [x + w + r, y + h + r], u: 1..0, v: 1..0
-    emitUiQuad(x + w, y + h, x + w + r, y + h + r, 1.0f, 1.0f, 0.0f, 0.0f);
-
-    // 4 Bordes perimetrales
-    // Top: [x, y - r] a [x + w, y], u=1, v: 0..1
-    emitUiQuad(x, y - r, x + w, y, 1.0f, 0.0f, 1.0f, 1.0f);
-    // Bottom: [x, y + h] a [x + w, y + h + r], u=1, v: 1..0
-    emitUiQuad(x, y + h, x + w, y + h + r, 1.0f, 1.0f, 1.0f, 0.0f);
-    // Left: [x - r, y] a [x, y + h], u: 0..1, v=1
-    emitUiQuad(x - r, y, x, y + h, 0.0f, 1.0f, 1.0f, 1.0f);
-    // Right: [x + w, y] a [x + w + r, y + h], u: 1..0, v=1
-    emitUiQuad(x + w, y, x + w + r, y + h, 1.0f, 1.0f, 0.0f, 1.0f);
-
-    C3D_ImmDrawEnd();
+    // Sombra proyectada con capas discretas escalonadas (cero texturas, cero DMA)
+    int steps = (radius >= 3.0f) ? 2 : 1;
+    for(int s = steps; s >= 1; s--) {
+        float r = radius * ((float) s / (float) steps);
+        u8 a = (u8) ((float) maxAlpha * ((float) (steps - s + 1) / (float) (steps * 2)));
+        if(a == 0) {
+            continue;
+        }
+        u32 col = uiColorRGBA(0, 0, 0, a);
+        // Banda inferior
+        uiDrawRect(x + 1.0f, y + h, w + r - 1.0f, r, col);
+        // Banda derecha
+        uiDrawRect(x + w, y + 1.0f, r, h, col);
+    }
+    // Núcleo suave bajo el cuerpo del elemento
+    uiDrawRect(x + 2.0f, y + 2.0f, w - 4.0f, h - 2.0f, uiColorRGBA(0, 0, 0, (u8)(maxAlpha * 0.35f)));
 }
 
 void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColor, u32 borderColor, float borderWidth) {
@@ -460,7 +395,7 @@ void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColo
         r = h * 0.5f;
     }
 
-    if(r <= 0.5f) {
+    if(r <= 1.0f) {
         if((fillColor >> 24) > 0) {
             uiDrawRect(x, y, w, h, fillColor);
         }
@@ -481,21 +416,16 @@ void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColo
     C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
     C3D_TexEnvInit(C3D_GetTexEnv(1));
 
-    static const float cosT[5] = { 1.0f, 0.9238795f, 0.7071068f, 0.3826834f, 0.0f };
-    static const float sinT[5] = { 0.0f, 0.3826834f, 0.7071068f, 0.9238795f, 1.0f };
-
-    float cxTL = x + r, cyTL = y + r;
-    float cxTR = x + w - r, cyTR = y + r;
-    float cxBL = x + r, cyBL = y + h - r;
-    float cxBR = x + w - r, cyBR = y + h - r;
-
+    // 1. Relleno con esquinas biseladas (3 quads + 4 triángulos de esquina)
     if((fillColor >> 24) > 0) {
         C3D_TexEnvColor(env0, fillColor);
         C3D_ImmDrawBegin(GPU_TRIANGLES);
 
-        // 3 rectángulos centrales sin solapamiento
+        // Centro vertical
         emitUiQuad(x, y + r, x + w, y + h - r, 0.0f, 0.0f, 0.0f, 0.0f);
+        // Franja superior central
         emitUiQuad(x + r, y, x + w - r, y + r, 0.0f, 0.0f, 0.0f, 0.0f);
+        // Franja inferior central
         emitUiQuad(x + r, y + h - r, x + w - r, y + h, 0.0f, 0.0f, 0.0f, 0.0f);
 
         auto emitTri = [](float px0, float py0, float px1, float py1, float px2, float py2) {
@@ -504,76 +434,48 @@ void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColo
             C3D_ImmSendAttrib(px2, py2, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
         };
 
-        for(int i = 0; i < 4; i++) {
-            // Top-Left (180 to 270 deg)
-            emitTri(cxTL, cyTL,
-                    cxTL - cosT[i] * r, cyTL - sinT[i] * r,
-                    cxTL - cosT[i+1] * r, cyTL - sinT[i+1] * r);
-            // Top-Right (270 to 360 deg)
-            emitTri(cxTR, cyTR,
-                    cxTR + sinT[i] * r, cyTR - cosT[i] * r,
-                    cxTR + sinT[i+1] * r, cyTR - cosT[i+1] * r);
-            // Bottom-Right (0 to 90 deg)
-            emitTri(cxBR, cyBR,
-                    cxBR + cosT[i] * r, cyBR + sinT[i] * r,
-                    cxBR + cosT[i+1] * r, cyBR + sinT[i+1] * r);
-            // Bottom-Left (90 to 180 deg)
-            emitTri(cxBL, cyBL,
-                    cxBL - sinT[i] * r, cyBL + cosT[i] * r,
-                    cxBL - sinT[i+1] * r, cyBL + cosT[i+1] * r);
-        }
+        // 4 esquinas biseladas a 45°
+        // Top-Left
+        emitTri(x + r, y + r, x, y + r, x + r, y);
+        // Top-Right
+        emitTri(x + w - r, y + r, x + w - r, y, x + w, y + r);
+        // Bottom-Right
+        emitTri(x + w - r, y + h - r, x + w, y + h - r, x + w - r, y + h);
+        // Bottom-Left
+        emitTri(x + r, y + h - r, x + r, y + h, x, y + h - r);
+
         C3D_ImmDrawEnd();
     }
 
+    // 2. Borde con esquinas biseladas (4 quads rectos + 4 quads en las esquinas)
     if(borderWidth > 0.0f && (borderColor >> 24) > 0) {
         float bw = borderWidth;
-        float ir = r - bw;
-        if(ir < 0.0f) {
-            ir = 0.0f;
-        }
-
         C3D_TexEnvColor(env0, borderColor);
         C3D_ImmDrawBegin(GPU_TRIANGLES);
 
         // 4 Bordes rectos
-        emitUiQuad(x + r, y, x + w - r, y + bw, 0.0f, 0.0f, 0.0f, 0.0f);
-        emitUiQuad(x + r, y + h - bw, x + w - r, y + h, 0.0f, 0.0f, 0.0f, 0.0f);
-        emitUiQuad(x, y + r, x + bw, y + h - r, 0.0f, 0.0f, 0.0f, 0.0f);
-        emitUiQuad(x + w - bw, y + r, x + w, y + h - r, 0.0f, 0.0f, 0.0f, 0.0f);
+        emitUiQuad(x + r, y, x + w - r, y + bw, 0.0f, 0.0f, 0.0f, 0.0f);         // Top
+        emitUiQuad(x + r, y + h - bw, x + w - r, y + h, 0.0f, 0.0f, 0.0f, 0.0f); // Bottom
+        emitUiQuad(x, y + r, x + bw, y + h - r, 0.0f, 0.0f, 0.0f, 0.0f);         // Left
+        emitUiQuad(x + w - bw, y + r, x + w, y + h - r, 0.0f, 0.0f, 0.0f, 0.0f); // Right
 
-        auto emitArcQuad = [](float px0, float py0, float px1, float py1,
-                              float qx0, float qy0, float qx1, float qy1) {
-            C3D_ImmSendAttrib(px0, py0, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-            C3D_ImmSendAttrib(px1, py1, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-            C3D_ImmSendAttrib(qx0, qy0, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        auto emitBevelQuad = [](float p0x, float p0y, float p1x, float p1y,
+                                float p2x, float p2y, float p3x, float p3y) {
+            C3D_ImmSendAttrib(p0x, p0y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+            C3D_ImmSendAttrib(p1x, p1y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+            C3D_ImmSendAttrib(p2x, p2y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
 
-            C3D_ImmSendAttrib(px1, py1, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-            C3D_ImmSendAttrib(qx1, qy1, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-            C3D_ImmSendAttrib(qx0, qy0, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+            C3D_ImmSendAttrib(p0x, p0y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+            C3D_ImmSendAttrib(p2x, p2y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+            C3D_ImmSendAttrib(p3x, p3y, 0.5f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
         };
 
-        for(int i = 0; i < 4; i++) {
-            // Top-Left
-            emitArcQuad(cxTL - cosT[i] * r, cyTL - sinT[i] * r,
-                        cxTL - cosT[i+1] * r, cyTL - sinT[i+1] * r,
-                        cxTL - cosT[i] * ir, cyTL - sinT[i] * ir,
-                        cxTL - cosT[i+1] * ir, cyTL - sinT[i+1] * ir);
-            // Top-Right
-            emitArcQuad(cxTR + sinT[i] * r, cyTR - cosT[i] * r,
-                        cxTR + sinT[i+1] * r, cyTR - cosT[i+1] * r,
-                        cxTR + sinT[i] * ir, cyTR - cosT[i] * ir,
-                        cxTR + sinT[i+1] * ir, cyTR - cosT[i+1] * ir);
-            // Bottom-Right
-            emitArcQuad(cxBR + cosT[i] * r, cyBR + sinT[i] * r,
-                        cxBR + cosT[i+1] * r, cyBR + sinT[i+1] * r,
-                        cxBR + cosT[i] * ir, cyBR + sinT[i] * ir,
-                        cxBR + cosT[i+1] * ir, cyBR + sinT[i+1] * ir);
-            // Bottom-Left
-            emitArcQuad(cxBL - sinT[i] * r, cyBL + cosT[i] * r,
-                        cxBL - sinT[i+1] * r, cyBL + cosT[i+1] * r,
-                        cxBL - sinT[i] * ir, cyBL + cosT[i] * ir,
-                        cxBL - sinT[i+1] * ir, cyBL + cosT[i+1] * ir);
-        }
+        // 4 esquinas biseladas
+        emitBevelQuad(x, y + r, x + r, y, x + r, y + bw, x + bw, y + r);                                         // Top-Left
+        emitBevelQuad(x + w - r, y, x + w, y + r, x + w - bw, y + r, x + w - r, y + bw);                         // Top-Right
+        emitBevelQuad(x + w, y + h - r, x + w - r, y + h, x + w - r, y + h - bw, x + w - bw, y + h - r);         // Bottom-Right
+        emitBevelQuad(x + r, y + h, x, y + h - r, x + bw, y + h - r, x + r, y + h - bw);                         // Bottom-Left
+
         C3D_ImmDrawEnd();
     }
 }
@@ -974,7 +876,7 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
     Mtx_Multiply(&mvp, proj, &modelView);
     C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProj, &mvp);
 
-    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_DepthTest(true, GPU_GEQUAL, GPU_WRITE_ALL);
     C3D_CullFace(GPU_CULL_NONE);
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
