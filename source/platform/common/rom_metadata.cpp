@@ -10,41 +10,43 @@ struct TitleDbEntry {
     const char* key;
     int year;
     const char* genre;
+    const char* developer;
+    const char* synopsis;
 };
 
 static const TitleDbEntry s_titleDb[] = {
-    { "POKEMON GLD",      2000, "RPG" },
-    { "POKEMON SLV",      2000, "RPG" },
-    { "POKEMON CRY",      2001, "RPG" },
-    { "POKEMON YEL",      1998, "RPG" },
-    { "POKEMON RED",      1996, "RPG" },
-    { "POKEMON BLU",      1996, "RPG" },
-    { "DONKEYKONGLAN",    1995, "Plataf." },
-    { "DONKEY KONG",      1994, "Plataf." },
-    { "TETRIS DX",        1998, "Puzzle" },
-    { "TETRIS",           1989, "Puzzle" },
-    { "ZELDA",            1993, "Aventura" },
-    { "SUPER MARIOLAND",  1989, "Plataf." },
-    { "MARIOLAND2",       1992, "Plataf." },
-    { "METROID2",         1991, "Accion" },
-    { "POKEMON GOLD",     2000, "RPG" },
-    { "POKEMON SILVER",   2000, "RPG" },
-    { "POKEMON CRYSTAL",  2001, "RPG" },
-    { "POKEMON YELLOW",   1998, "RPG" },
-    { "POKEMON BLUE",     1996, "RPG" },
-    { "POKEMON GREEN",    1996, "RPG" },
-    { "POKEMON",          1996, "RPG" },
-    { "WARIOLAND2",       1998, "Plataf." },
-    { "WARIOLAND",        1994, "Plataf." },
-    { "WARIO LAND",       1994, "Plataf." },
-    { "MARIO LAND",       1989, "Plataf." },
-    { "KIRBY DREAM LAND", 1992, "Plataf." },
-    { "KIRBY",            1992, "Plataf." },
-    { "MEGAMAN",          1991, "Accion" },
-    { "ROCKMAN",          1991, "Accion" },
-    { "CASTLEVANIA",      1989, "Accion" },
-    { "DR. MARIO",        1990, "Puzzle" },
-    { "DR.MARIO",         1990, "Puzzle" }
+    { "POKEMON GLD",      2000, "RPG",      "Game Freak", "Explora Johto, atrapa 100 nuevos Pokemon y derrota al Team Rocket en esta legendaria secuela." },
+    { "POKEMON SLV",      2000, "RPG",      "Game Freak", "Explora Johto, atrapa 100 nuevos Pokemon y derrota al Team Rocket en esta legendaria secuela." },
+    { "POKEMON CRY",      2001, "RPG",      "Game Freak", "Version definitiva de la 2da generacion con animaciones de combate y la subsaga de Suicune." },
+    { "POKEMON YEL",      1998, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON RED",      1996, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON BLU",      1996, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON GOLD",     2000, "RPG",      "Game Freak", "Explora Johto, atrapa 100 nuevos Pokemon y derrota al Team Rocket en esta legendaria secuela." },
+    { "POKEMON SILVER",   2000, "RPG",      "Game Freak", "Explora Johto, atrapa 100 nuevos Pokemon y derrota al Team Rocket en esta legendaria secuela." },
+    { "POKEMON CRYSTAL",  2001, "RPG",      "Game Freak", "Version definitiva de la 2da generacion con animaciones de combate y la subsaga de Suicune." },
+    { "POKEMON YELLOW",   1998, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON BLUE",     1996, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON GREEN",    1996, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "POKEMON",          1996, "RPG",      "Game Freak", "El inicio de la saga en Kanto. Consigue las 8 medallas y completa la Pokedex de 151 criaturas." },
+    { "DONKEYKONGLAN",    1995, "Plataf.",  "Rareware",   "DK y Diddy recorren la isla con graficos pre-renderizados adaptados a la pantalla monocroma." },
+    { "DONKEY KONG",      1994, "Plataf.",  "Nintendo",   "Mario rescata a Pauline a traves de 101 niveles llenos de ingenio, acrobacias y llaves." },
+    { "TETRIS DX",        1998, "Puzzle",   "Nintendo",   "El clasico imperecedero de puzzles llevado al color con nuevos modos y sistema de guardado." },
+    { "TETRIS",           1989, "Puzzle",   "Nintendo",   "El icono mundial de puzzles. Alinea los tetraminos y bate tu propio record." },
+    { "ZELDA",            1993, "Aventura", "Nintendo",   "Despierta al Pez Viento en la misteriosa Isla Koholint en una de las mejores aventuras portatiles." },
+    { "SUPER MARIOLAND",  1989, "Plataf.",  "Nintendo",   "Acompana a Mario por Sarasaland para salvar a la Princesa Daisy de la amenaza alienigena." },
+    { "MARIOLAND2",       1992, "Plataf.",  "Nintendo",   "Recupera las 6 Monedas Doradas para retomar el castillo de Mario arrebatado por Wario." },
+    { "METROID2",         1991, "Accion",   "Nintendo",   "Infiltrate en SR388 y erradica a los metroides en esta oscura mision de supervivencia con Samus." },
+    { "WARIOLAND2",       1998, "Plataf.",  "Nintendo",   "Wario despierta en su castillo inundado para recuperar sus tesoros del capitan Syrup." },
+    { "WARIOLAND",        1994, "Plataf.",  "Nintendo",   "Guia a Wario a traves de Kitchen Island acumulando monedas para comprar su propio castillo." },
+    { "WARIO LAND",       1994, "Plataf.",  "Nintendo",   "Guia a Wario a traves de Kitchen Island acumulando monedas para comprar su propio castillo." },
+    { "MARIO LAND",       1989, "Plataf.",  "Nintendo",   "Acompana a Mario por Sarasaland para salvar a la Princesa Daisy de la amenaza alienigena." },
+    { "KIRBY DREAM LAND", 1992, "Plataf.",  "HAL Lab",    "El debut de Kirby en Dream Land para rescatar la comida robada por el Rey Dedede." },
+    { "KIRBY",            1992, "Plataf.",  "HAL Lab",    "El debut de Kirby en Dream Land para rescatar la comida robada por el Rey Dedede." },
+    { "MEGAMAN",          1991, "Accion",   "Capcom",     "Mega Man combate a los Robot Masters del Dr. Wily adaptado al hardware portatil." },
+    { "ROCKMAN",          1991, "Accion",   "Capcom",     "Mega Man combate a los Robot Masters del Dr. Wily adaptado al hardware portatil." },
+    { "CASTLEVANIA",      1989, "Accion",   "Konami",     "Christopher Belmont blande el latigo Vampire Killer contra las hordas del Conde Dracula." },
+    { "DR. MARIO",        1990, "Puzzle",   "Nintendo",   "Erradica las bacterias de colores combinando pildoras vitaminicas en este frenetico puzzle." },
+    { "DR.MARIO",         1990, "Puzzle",   "Nintendo",   "Erradica las bacterias de colores combinando pildoras vitaminicas en este frenetico puzzle." }
 };
 
 static std::string getNewLicensee(const std::string& code) {
@@ -399,6 +401,8 @@ bool fetchRomMetadata(const std::string& romPath, RomMetadata& outMeta) {
         if(upperTitle.find(entry.key) != std::string::npos || fileBase.find(entry.key) != std::string::npos) {
             outMeta.year = entry.year;
             outMeta.genre = entry.genre;
+            outMeta.developer = entry.developer;
+            outMeta.synopsis = entry.synopsis;
             matched = true;
             break;
         }
@@ -407,6 +411,8 @@ bool fetchRomMetadata(const std::string& romPath, RomMetadata& outMeta) {
     if(!matched) {
         outMeta.year = 0;
         outMeta.genre = "Clasico";
+        outMeta.developer = outMeta.publisher.empty() ? "Desconocido" : outMeta.publisher;
+        outMeta.synopsis = "Titulo clasico de Game Boy totalmente compatible con el nucleo GameYob.";
     }
 
     // 10. Check .sav file

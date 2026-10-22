@@ -607,6 +607,16 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     // 2. Botones de acción y navegación de cruceta/CPad
+    if(kDown & KEY_X) {
+        uiToggle3DArt();
+    }
+    if(kDown & KEY_Y) {
+        uiToggleSynopsis();
+    }
+    if(kDown & KEY_SELECT) {
+        uiOpenConfigModal(UI_TAB_GAME);
+    }
+
     if(kDown & KEY_A) {
         if(this->navigateToSelection(result)) {
             return true;

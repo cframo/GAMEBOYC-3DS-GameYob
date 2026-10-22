@@ -579,15 +579,16 @@ void gfxDrawScreen() {
         if(dmaDispatched) {
             gspWaitForPPF();
         }
+        float slider = osGet3DSliderState();
         C3D_FrameDrawOn(targetTopLeft);
         C3D_RenderTargetClear(targetTopLeft, C3D_CLEAR_ALL, 0x181A20FF, 0);
         C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionTop);
-        uiDrawTopScreenHub();
-        if(isStereoActive) {
+        uiDrawTopScreenHub(-slider * 2.0f);
+        if(slider > 0.0f && targetTopRight != nullptr) {
             C3D_FrameDrawOn(targetTopRight);
             C3D_RenderTargetClear(targetTopRight, C3D_CLEAR_ALL, 0x181A20FF, 0);
             C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProjection, &projectionTop);
-            uiDrawTopScreenHub();
+            uiDrawTopScreenHub(slider * 2.0f);
         }
     } else if(!hasGame) {
         // No hay juego cargado: limpiar targetTopLeft (y targetTopRight si 3D activo) con color de fondo oscuro
@@ -964,6 +965,10 @@ void gfxDrawScreen() {
 
     C3D_FrameEnd(0);
     curTexIdx ^= 1;
+}
+
+const C3D_Mtx* gfxGetProjectionTop() {
+    return &projectionTop;
 }
 
 const C3D_Mtx* gfxGetProjectionBottom() {

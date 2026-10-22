@@ -6,6 +6,8 @@
 struct RomMetadata {
     std::string title;
     std::string publisher;
+    std::string developer;
+    std::string synopsis;
     std::string genre;
     int year;
     std::string mbcName;

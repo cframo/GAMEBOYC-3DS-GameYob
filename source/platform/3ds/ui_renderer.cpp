@@ -618,19 +618,63 @@ static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
     C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
 }
 
-void uiDrawBoxart3D(float centerX, float centerY, float size) {
-    s_boxartAngleY += 0.02f;
+static bool s_show3DArt = true;
+static bool s_showSynopsis = false;
+
+void uiToggle3DArt() {
+    s_show3DArt = !s_show3DArt;
+}
+
+void uiToggleSynopsis() {
+    s_showSynopsis = !s_showSynopsis;
+}
+
+bool uiIs3DArtEnabled() {
+    return s_show3DArt;
+}
+
+bool uiIsSynopsisEnabled() {
+    return s_showSynopsis;
+}
+
+static std::vector<std::string> wrapSynopsisText(const std::string& text, size_t maxLen) {
+    std::vector<std::string> lines;
+    size_t start = 0;
+    while(start < text.length() && lines.size() < 4) {
+        if(text.length() - start <= maxLen) {
+            lines.push_back(text.substr(start));
+            break;
+        }
+        size_t end = start + maxLen;
+        size_t space = text.rfind(' ', end);
+        if(space != std::string::npos && space > start) {
+            lines.push_back(text.substr(start, space - start));
+            start = space + 1;
+        } else {
+            lines.push_back(text.substr(start, maxLen));
+            start = end;
+        }
+    }
+    return lines;
+}
+
+void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* proj, float eyeOffset) {
+    if(proj == nullptr) {
+        proj = gfxGetProjectionBottom();
+    }
+    if(eyeOffset <= 0.0f) {
+        s_boxartAngleY += 0.02f;
+    }
     float rotY = sinf(s_boxartAngleY) * 28.0f * (M_PI / 180.0f);
     float rotX = -8.0f * (M_PI / 180.0f);
 
     C3D_Mtx modelView;
     Mtx_Identity(&modelView);
-    Mtx_Translate(&modelView, centerX, centerY, 0.5f, true);
+    Mtx_Translate(&modelView, centerX + eyeOffset, centerY, 0.5f, true);
     Mtx_Scale(&modelView, 1.0f, 1.0f, 0.005f);
     Mtx_RotateX(&modelView, rotX, true);
     Mtx_RotateY(&modelView, rotY, true);
 
-    const C3D_Mtx* proj = gfxGetProjectionBottom();
     int uLocProj = gfxGetULocProjection();
 
     C3D_Mtx mvp;
@@ -1520,7 +1564,26 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             }
 
             uiUpdateBoxart(fullPath.c_str(), nullptr, 0, isGBC);
-            uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
+            if(s_show3DArt) {
+                uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
+            } else if(s_boxartLoaded && s_boxartTexAllocated) {
+                C3D_TexBind(0, &s_boxartTex);
+                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+                C3D_TexEnvInit(env0);
+                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+                C3D_TexEnvInit(C3D_GetTexEnv(1));
+                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+                C3D_CullFace(GPU_CULL_NONE);
+                C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+                C3D_ImmDrawBegin(GPU_TRIANGLES);
+                emitUiQuad(226.0f, 38.0f, 282.0f, 94.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                C3D_ImmDrawEnd();
+                uiDrawRectOutline(225.0f, 37.0f, 58.0f, 58.0f, 1.0f, UI_COLOR_YELLOW);
+            } else {
+                uiDrawBoxart3D(254.0f, 66.0f, 64.0f);
+            }
 
             // Línea 1 (y=114): Título limpio del juego (máx 14 chars)
             std::string dispTitle = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : selectedFile;
@@ -1627,7 +1690,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     C3D_CullFace(GPU_CULL_NONE);
 }
 
-void uiDrawTopScreenHub() {
+void uiDrawTopScreenHub(float eyeOffset) {
     const u32 colBg = uiColorRGBA(24, 26, 32, 255);
     const u32 colAmber = uiColorRGBA(196, 148, 56, 255);
     const u32 colPanelBlue = uiColorRGBA(16, 26, 44, 255);
@@ -1747,24 +1810,12 @@ void uiDrawTopScreenHub() {
         uiDrawRect(22.0f, 50.0f, 134.0f, 162.0f, uiColorRGBA(12, 18, 30, 255));
         uiDrawRectOutline(22.0f, 50.0f, 134.0f, 162.0f, 1.0f, uiColorRGBA(64, 80, 104, 255));
 
-        if(s_boxartLoaded && s_boxartTexAllocated) {
-            C3D_TexBind(0, &s_boxartTex);
-            C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-            C3D_TexEnvInit(env0);
-            C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-            C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-            C3D_TexEnvInit(C3D_GetTexEnv(1));
-            C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-            C3D_CullFace(GPU_CULL_NONE);
-            C3D_AlphaTest(false, GPU_ALWAYS, 0);
+        if(s_show3DArt) {
+            uiDrawBoxart3D(89.0f, 112.0f, 105.0f, gfxGetProjectionTop(), eyeOffset);
 
-            C3D_ImmDrawBegin(GPU_TRIANGLES);
-            emitUiQuad(29.0f, 56.0f, 149.0f, 176.0f, 0.0f, 0.0f, 1.0f, 1.0f);
-            C3D_ImmDrawEnd();
-
-            std::string pubStr = s_metaLoaded ? s_currentMeta.publisher : "Nintendo";
+            std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
             if(pubStr.length() > 15) pubStr = pubStr.substr(0, 14) + "~";
-            uiDrawText(26.0f, 182.0f, pubStr.c_str(), colWhite);
+            uiDrawText(26.0f + eyeOffset * 0.3f, 182.0f, pubStr.c_str(), colWhite);
 
             char yrGen[32];
             if(s_metaLoaded && s_currentMeta.year > 0) {
@@ -1772,42 +1823,80 @@ void uiDrawTopScreenHub() {
             } else {
                 snprintf(yrGen, sizeof(yrGen), "Clasico GameBoy");
             }
-            uiDrawText(26.0f, 196.0f, yrGen, colYellow);
+            uiDrawText(26.0f + eyeOffset * 0.3f, 196.0f, yrGen, colYellow);
         } else {
-            bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
-            u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
-            u32 colCartBorder = isGBC ? uiColorRGBA(85, 95, 120, 255) : uiColorRGBA(190, 190, 190, 255);
+            float shadowOffset = 3.0f;
+            if(s_boxartLoaded && s_boxartTexAllocated) {
+                // Sombra de caja 2D
+                uiDrawRect(29.0f + eyeOffset * 0.5f + shadowOffset, 56.0f + shadowOffset, 120.0f, 120.0f, uiColorRGBA(0, 0, 0, 160));
 
-            uiDrawRect(36.0f, 58.0f, 106.0f, 118.0f, colCart);
-            uiDrawRectOutline(36.0f, 58.0f, 106.0f, 118.0f, 1.0f, colCartBorder);
+                C3D_TexBind(0, &s_boxartTex);
+                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+                C3D_TexEnvInit(env0);
+                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+                C3D_TexEnvInit(C3D_GetTexEnv(1));
+                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+                C3D_CullFace(GPU_CULL_NONE);
+                C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
-            // Muesca superior
-            uiDrawRect(36.0f, 58.0f, 24.0f, 10.0f, uiColorRGBA(12, 18, 30, 255));
+                C3D_ImmDrawBegin(GPU_TRIANGLES);
+                emitUiQuad(29.0f + eyeOffset * 0.5f, 56.0f, 149.0f + eyeOffset * 0.5f, 176.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                C3D_ImmDrawEnd();
 
-            // Etiqueta del cartucho
-            uiDrawRect(44.0f, 80.0f, 90.0f, 86.0f, uiColorRGBA(24, 34, 52, 255));
-            uiDrawRectOutline(44.0f, 80.0f, 90.0f, 86.0f, 1.0f, colAmber);
+                // Marco dorado elegante de 1px
+                uiDrawRectOutline(28.0f + eyeOffset * 0.5f, 55.0f, 122.0f, 122.0f, 1.0f, colAmber);
 
-            uiDrawText(48.0f, 90.0f, "GAME BOY", colWhite);
-            if(isGBC) {
-                uiDrawText(48.0f, 102.0f, " COLOR", UI_COLOR_CYAN);
-            }
+                std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
+                if(pubStr.length() > 15) pubStr = pubStr.substr(0, 14) + "~";
+                uiDrawText(26.0f + eyeOffset * 0.3f, 182.0f, pubStr.c_str(), colWhite);
 
-            std::string miniTitle = s_metaLoaded ? s_currentMeta.title : selectedFile;
-            if(miniTitle.length() > 10) miniTitle = miniTitle.substr(0, 9) + "~";
-            uiDrawText(48.0f, 124.0f, miniTitle.c_str(), colYellow);
-
-            std::string pubStr = s_metaLoaded ? s_currentMeta.publisher : "Nintendo";
-            if(pubStr.length() > 15) pubStr = pubStr.substr(0, 14) + "~";
-            uiDrawText(26.0f, 182.0f, pubStr.c_str(), colWhite);
-
-            char yrGen[32];
-            if(s_metaLoaded && s_currentMeta.year > 0) {
-                snprintf(yrGen, sizeof(yrGen), "%d %.9s", s_currentMeta.year, s_currentMeta.genre.c_str());
+                char yrGen[32];
+                if(s_metaLoaded && s_currentMeta.year > 0) {
+                    snprintf(yrGen, sizeof(yrGen), "%d %.9s", s_currentMeta.year, s_currentMeta.genre.c_str());
+                } else {
+                    snprintf(yrGen, sizeof(yrGen), "Clasico GameBoy");
+                }
+                uiDrawText(26.0f + eyeOffset * 0.3f, 196.0f, yrGen, colYellow);
             } else {
-                snprintf(yrGen, sizeof(yrGen), "Clasico GameBoy");
+                bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
+                u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
+                u32 colCartBorder = isGBC ? uiColorRGBA(85, 95, 120, 255) : uiColorRGBA(190, 190, 190, 255);
+
+                // Sombra de cartucho 2D
+                uiDrawRect(36.0f + eyeOffset * 0.5f + shadowOffset, 58.0f + shadowOffset, 106.0f, 118.0f, uiColorRGBA(0, 0, 0, 160));
+
+                uiDrawRect(36.0f + eyeOffset * 0.5f, 58.0f, 106.0f, 118.0f, colCart);
+                uiDrawRectOutline(36.0f + eyeOffset * 0.5f, 58.0f, 106.0f, 118.0f, 1.0f, colCartBorder);
+
+                // Muesca superior
+                uiDrawRect(36.0f + eyeOffset * 0.5f, 58.0f, 24.0f, 10.0f, uiColorRGBA(12, 18, 30, 255));
+
+                // Etiqueta del cartucho
+                uiDrawRect(44.0f + eyeOffset * 0.5f, 80.0f, 90.0f, 86.0f, uiColorRGBA(24, 34, 52, 255));
+                uiDrawRectOutline(44.0f + eyeOffset * 0.5f, 80.0f, 90.0f, 86.0f, 1.0f, colAmber);
+
+                uiDrawText(48.0f + eyeOffset * 0.5f, 90.0f, "GAME BOY", colWhite);
+                if(isGBC) {
+                    uiDrawText(48.0f + eyeOffset * 0.5f, 102.0f, " COLOR", UI_COLOR_CYAN);
+                }
+
+                std::string miniTitle = s_metaLoaded ? s_currentMeta.title : selectedFile;
+                if(miniTitle.length() > 10) miniTitle = miniTitle.substr(0, 9) + "~";
+                uiDrawText(48.0f + eyeOffset * 0.5f, 124.0f, miniTitle.c_str(), colYellow);
+
+                std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
+                if(pubStr.length() > 15) pubStr = pubStr.substr(0, 14) + "~";
+                uiDrawText(26.0f + eyeOffset * 0.3f, 182.0f, pubStr.c_str(), colWhite);
+
+                char yrGen[32];
+                if(s_metaLoaded && s_currentMeta.year > 0) {
+                    snprintf(yrGen, sizeof(yrGen), "%d %.9s", s_currentMeta.year, s_currentMeta.genre.c_str());
+                } else {
+                    snprintf(yrGen, sizeof(yrGen), "Clasico GameBoy");
+                }
+                uiDrawText(26.0f + eyeOffset * 0.3f, 196.0f, yrGen, colYellow);
             }
-            uiDrawText(26.0f, 196.0f, yrGen, colYellow);
         }
     } else {
         uiDrawRect(22.0f, 50.0f, 134.0f, 162.0f, uiColorRGBA(20, 26, 38, 255));
@@ -1815,87 +1904,135 @@ void uiDrawTopScreenHub() {
         uiDrawText(42.0f, 118.0f, "Sin seleccion", colGray);
     }
 
-    // 6. Lado Derecho: Ficha de Compatibilidad (x: 172..384, y: 50..214)
-    uiDrawText(172.0f, 52.0f, "FICHA DE COMPATIBILIDAD", colYellow);
-    uiDrawRect(172.0f, 65.0f, 204.0f, 1.0f, colAmber);
+    // 6. Lado Derecho (x: 172..384, y: 50..214)
+    if(!s_showSynopsis) {
+        // MODO FICHA DE COMPATIBILIDAD
+        uiDrawText(172.0f, 52.0f, "FICHA DE COMPATIBILIDAD", colYellow);
+        uiDrawRect(172.0f, 65.0f, 204.0f, 1.0f, colAmber);
 
-    if(!selectedFile.empty() && !isDir) {
-        bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
+        if(!selectedFile.empty() && !isDir) {
+            bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
 
-        // Línea 1: Modo Nativo
-        std::string modoStr = "- Modo: ";
-        if(s_metaLoaded ? s_currentMeta.isGBC : isGBC) modoStr += "GB Color (CGB)";
-        else if(s_metaLoaded && s_currentMeta.isSGB) modoStr += "Super GB (SGB)";
-        else modoStr += "Game Boy (DMG)";
-        uiDrawText(172.0f, 74.0f, modoStr.c_str(), colWhite);
+            // Línea 1: Modo Nativo
+            std::string modoStr = "- Modo: ";
+            if(s_metaLoaded ? s_currentMeta.isGBC : isGBC) modoStr += "GB Color (CGB)";
+            else if(s_metaLoaded && s_currentMeta.isSGB) modoStr += "Super GB (SGB)";
+            else modoStr += "Game Boy (DMG)";
+            uiDrawText(172.0f, 74.0f, modoStr.c_str(), colWhite);
 
-        // Línea 2: Mapper
-        std::string mapStr = "- Mapper: ";
-        if(s_metaLoaded && !s_currentMeta.mbcName.empty()) {
-            mapStr += s_currentMeta.mbcName;
-            if(s_currentMeta.mbcName.find("MBC3") != std::string::npos) mapStr += " (RTC)";
-        } else {
-            mapStr += "MBC Auto";
-        }
-        uiDrawText(172.0f, 90.0f, mapStr.c_str(), UI_COLOR_CYAN);
-
-        // Línea 3: Guardado
-        std::string savStr = "- Guardado: ";
-        if(s_metaLoaded) {
-            if(s_currentMeta.ramSizeKB > 0) {
-                savStr += "SRAM " + std::to_string(s_currentMeta.ramSizeKB) + "KB";
-                if(s_currentMeta.hasBattery) savStr += "+Bat";
-            } else if(s_currentMeta.hasBattery) {
-                savStr += "Bateria (Sin RAM)";
+            // Línea 2: Mapper
+            std::string mapStr = "- Mapper: ";
+            if(s_metaLoaded && !s_currentMeta.mbcName.empty()) {
+                mapStr += s_currentMeta.mbcName;
+                if(s_currentMeta.mbcName.find("MBC3") != std::string::npos) mapStr += " (RTC)";
             } else {
-                savStr += "Sin guardado";
+                mapStr += "MBC Auto";
             }
+            uiDrawText(172.0f, 90.0f, mapStr.c_str(), UI_COLOR_CYAN);
+
+            // Línea 3: Guardado
+            std::string savStr = "- Guardado: ";
+            if(s_metaLoaded) {
+                if(s_currentMeta.ramSizeKB > 0) {
+                    savStr += "SRAM " + std::to_string(s_currentMeta.ramSizeKB) + "KB";
+                    if(s_currentMeta.hasBattery) savStr += "+Bat";
+                } else if(s_currentMeta.hasBattery) {
+                    savStr += "Bateria (Sin RAM)";
+                } else {
+                    savStr += "Sin guardado";
+                }
+            } else {
+                savStr += "SRAM / Flash";
+            }
+            uiDrawText(172.0f, 106.0f, savStr.c_str(), colWhite);
+
+            // Línea 4: Tamaño ROM
+            std::string romSzStr = "- ROM: ";
+            if(s_metaLoaded && s_currentMeta.romSizeKB > 0) {
+                int banks = s_currentMeta.romSizeKB / 16;
+                romSzStr += std::to_string(s_currentMeta.romSizeKB) + " KB (" + std::to_string(banks) + " b)";
+            } else {
+                romSzStr += "Estandar";
+            }
+            uiDrawText(172.0f, 122.0f, romSzStr.c_str(), UI_COLOR_CYAN);
+
+            // Línea 5: Audio
+            uiDrawText(172.0f, 138.0f, "- Audio: SPSC 32,728 Hz", colWhite);
+
+            // Línea 6: Última partida
+            std::string saveInfo = "- Partida: ";
+            if(s_metaLoaded && s_currentMeta.hasSave) {
+                saveInfo += s_currentMeta.saveDate;
+            } else {
+                saveInfo += "Ninguna";
+            }
+            uiDrawText(172.0f, 154.0f, saveInfo.c_str(), (s_metaLoaded && s_currentMeta.hasSave) ? UI_COLOR_GREEN : UI_COLOR_DARKGRAY);
+
+            // Línea 7: Motor
+            uiDrawText(172.0f, 170.0f, "- Motor: ARM11 JIT 60 FPS", colGray);
+
+            // Línea 8: Carátula / Scraping
+            const char* scText = scraperGetStatusText();
+            char statBuf[40];
+            if(scText && scText[0] != '\0') snprintf(statBuf, sizeof(statBuf), "- Scraper: %s", scText);
+            else snprintf(statBuf, sizeof(statBuf), "- Caratula: %s", s_boxartLoaded ? "Local SDMC OK" : "Pendiente");
+            uiDrawText(172.0f, 186.0f, statBuf, s_boxartLoaded ? UI_COLOR_GREEN : colYellow);
         } else {
-            savStr += "SRAM / Flash";
+            uiDrawText(172.0f, 74.0f, "- Directorio SDMC", colWhite);
+            uiDrawText(172.0f, 90.0f, "- Seleccione una ROM para", UI_COLOR_CYAN);
+            uiDrawText(172.0f, 106.0f, "  ver su ficha tecnica.", UI_COLOR_CYAN);
+            uiDrawText(172.0f, 138.0f, "- Audio: SPSC 32,728 Hz", colWhite);
+            uiDrawText(172.0f, 170.0f, "- Motor: ARM11 JIT 60 FPS", colGray);
         }
-        uiDrawText(172.0f, 106.0f, savStr.c_str(), colWhite);
-
-        // Línea 4: Tamaño ROM
-        std::string romSzStr = "- ROM: ";
-        if(s_metaLoaded && s_currentMeta.romSizeKB > 0) {
-            int banks = s_currentMeta.romSizeKB / 16;
-            romSzStr += std::to_string(s_currentMeta.romSizeKB) + " KB (" + std::to_string(banks) + " b)";
-        } else {
-            romSzStr += "Estandar";
-        }
-        uiDrawText(172.0f, 122.0f, romSzStr.c_str(), UI_COLOR_CYAN);
-
-        // Línea 5: Audio
-        uiDrawText(172.0f, 138.0f, "- Audio: SPSC 32,728 Hz", colWhite);
-
-        // Línea 6: Última partida
-        std::string saveInfo = "- Partida: ";
-        if(s_metaLoaded && s_currentMeta.hasSave) {
-            saveInfo += s_currentMeta.saveDate;
-        } else {
-            saveInfo += "Ninguna";
-        }
-        uiDrawText(172.0f, 154.0f, saveInfo.c_str(), (s_metaLoaded && s_currentMeta.hasSave) ? UI_COLOR_GREEN : UI_COLOR_DARKGRAY);
-
-        // Línea 7: Motor
-        uiDrawText(172.0f, 170.0f, "- Motor: ARM11 JIT 60 FPS", colGray);
-
-        // Línea 8: Carátula / Scraping
-        const char* scText = scraperGetStatusText();
-        char statBuf[40];
-        if(scText && scText[0] != '\0') snprintf(statBuf, sizeof(statBuf), "- Scraper: %s", scText);
-        else snprintf(statBuf, sizeof(statBuf), "- Caratula: %s", s_boxartLoaded ? "Local SDMC OK" : "Pendiente");
-        uiDrawText(172.0f, 186.0f, statBuf, s_boxartLoaded ? UI_COLOR_GREEN : colYellow);
     } else {
-        uiDrawText(172.0f, 74.0f, "- Directorio SDMC", colWhite);
-        uiDrawText(172.0f, 90.0f, "- Seleccione una ROM para", UI_COLOR_CYAN);
-        uiDrawText(172.0f, 106.0f, "  ver su ficha tecnica.", UI_COLOR_CYAN);
-        uiDrawText(172.0f, 138.0f, "- Audio: SPSC 32,728 Hz", colWhite);
-        uiDrawText(172.0f, 170.0f, "- Motor: ARM11 JIT 60 FPS", colGray);
+        // MODO SINOPSIS Y DATOS
+        uiDrawText(172.0f, 52.0f, "SINOPSIS Y DATOS", colYellow);
+        uiDrawRect(172.0f, 65.0f, 204.0f, 1.0f, colAmber);
+
+        if(!selectedFile.empty() && !isDir) {
+            // Línea 1: Año y Género
+            char l1[32];
+            if(s_metaLoaded && s_currentMeta.year > 0) {
+                snprintf(l1, sizeof(l1), "- Ano: %d | %s", s_currentMeta.year, s_currentMeta.genre.c_str());
+            } else {
+                snprintf(l1, sizeof(l1), "- Genero: %s", s_metaLoaded ? s_currentMeta.genre.c_str() : "Clasico");
+            }
+            uiDrawText(172.0f, 74.0f, l1, colWhite);
+
+            // Línea 2: Desarrollador
+            std::string dev = s_metaLoaded && !s_currentMeta.developer.empty() ? s_currentMeta.developer : (s_metaLoaded && !s_currentMeta.publisher.empty() ? s_currentMeta.publisher : "Desconocido");
+            if(dev.length() > 18) dev = dev.substr(0, 17) + "~";
+            std::string devLine = "- Dev: " + dev;
+            uiDrawText(172.0f, 90.0f, devLine.c_str(), UI_COLOR_CYAN);
+
+            // Línea 3: Tiempo Jugado
+            uiDrawText(172.0f, 106.0f, "- Tiempo: Registrado", colWhite);
+
+            // Líneas 4..7: Sinopsis con saltos de línea (máx 25 chars)
+            std::string syn = s_metaLoaded && !s_currentMeta.synopsis.empty() ? s_currentMeta.synopsis : "Titulo clasico de Game Boy totalmente compatible con el nucleo GameYob.";
+            std::vector<std::string> synLines = wrapSynopsisText(syn, 25);
+            float sy = 124.0f;
+            for(size_t i = 0; i < synLines.size(); i++) {
+                uiDrawText(172.0f, sy, synLines[i].c_str(), UI_COLOR_GRAY);
+                sy += 15.0f;
+            }
+
+            // Estado al pie de datos
+            uiDrawText(172.0f, 186.0f, "- Nucleo: GameYob 100% OK", UI_COLOR_GREEN);
+        } else {
+            uiDrawText(172.0f, 74.0f, "- Directorio SDMC", colWhite);
+            uiDrawText(172.0f, 90.0f, "- Seleccione una ROM para", UI_COLOR_CYAN);
+            uiDrawText(172.0f, 106.0f, "  ver su sinopsis.", UI_COLOR_CYAN);
+            uiDrawText(172.0f, 138.0f, "- Audio: SPSC 32,728 Hz", colWhite);
+            uiDrawText(172.0f, 170.0f, "- Motor: ARM11 JIT 60 FPS", colGray);
+        }
     }
 
     // 7. Pie de pantalla superior (y: 222..234)
-    uiDrawText(24.0f, 224.0f, "[A] Iniciar  [Y] Cargar State  [SELECT] Menu", colWhite);
+    char footerBuf[64];
+    snprintf(footerBuf, sizeof(footerBuf), "[X] Alternar Arte   [Y] %s", s_showSynopsis ? "Ver Ficha Tecnica" : "Ver Sinopsis");
+    float footX = s_showSynopsis ? 32.0f : 52.0f;
+    uiDrawText(footX, 224.0f, footerBuf, colWhite);
 
     // Reset TexEnv para dejar el pipeline limpio
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
