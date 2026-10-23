@@ -867,6 +867,39 @@ void mgrCyclePalette() {
     mgrRefreshPalette();
 }
 
+const char* mgrGetPaletteName(int mode) {
+    static const char* s_paletteNames[14] = {
+        "Grayscale", "Auto (ROM)", "Invertido", "Pastel Mix",
+        "GBC Rojo", "GBC Naranja", "GBC Amarillo", "GBC Verde",
+        "GBC Azul", "GBC Marron", "GBC V. Oscuro", "GBC A. Oscuro",
+        "GBC M. Oscuro", "GB Clasico"
+    };
+    if(mode < 0 || mode >= 14) {
+        return "Grayscale";
+    }
+    return s_paletteNames[mode];
+}
+
+const u32* mgrGetPaletteColors(int mode) {
+    switch(mode) {
+        case 0: return findPalette("GBC - Grayscale");
+        case 1: return findPalette("GBC - Grayscale");
+        case 2: return findPalette("GBC - Inverted");
+        case 3: return findPalette("GBC - Pastel Mix");
+        case 4: return findPalette("GBC - Red");
+        case 5: return findPalette("GBC - Orange");
+        case 6: return findPalette("GBC - Yellow");
+        case 7: return findPalette("GBC - Green");
+        case 8: return findPalette("GBC - Blue");
+        case 9: return findPalette("GBC - Brown");
+        case 10: return findPalette("GBC - Dark Green");
+        case 11: return findPalette("GBC - Dark Blue");
+        case 12: return findPalette("GBC - Dark Brown");
+        case 13: return findPalette("GB - Classic");
+        default: return findPalette("GBC - Grayscale");
+    }
+}
+
 bool mgrTryRawBorderFile(std::string border) {
     std::ifstream stream(border, std::ios::binary);
     if(stream.is_open()) {

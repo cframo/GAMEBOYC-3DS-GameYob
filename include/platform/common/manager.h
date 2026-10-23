@@ -29,6 +29,8 @@ void mgrDeleteState(int stateNum);
 
 void mgrRefreshPalette();
 void mgrCyclePalette();
+const char* mgrGetPaletteName(int mode);
+const u32* mgrGetPaletteColors(int mode);
 void mgrRefreshBorder();
 
 bool mgrGetFastForward();

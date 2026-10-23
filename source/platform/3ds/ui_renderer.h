@@ -6,6 +6,8 @@
 #define UI_COLOR_RGBA(r, g, b, a) ((u32)((r) & 0xFF) | (((u32)((g) & 0xFF)) << 8) | (((u32)((b) & 0xFF)) << 16) | (((u32)((a) & 0xFF)) << 24))
 
 #define UI_COLOR_YELLOW   UI_COLOR_RGBA(255, 220, 48, 255)
+#define UI_COLOR_AMBER    UI_COLOR_RGBA(212, 168, 67, 255)
+#define UI_COLOR_GOLD     UI_COLOR_RGBA(212, 168, 67, 255)
 #define UI_COLOR_WHITE    UI_COLOR_RGBA(255, 255, 255, 255)
 #define UI_COLOR_CYAN     UI_COLOR_RGBA(0, 255, 255, 255)
 #define UI_COLOR_GRAY     UI_COLOR_RGBA(150, 160, 175, 255)
@@ -26,6 +28,17 @@ enum UiModalTab {
     UI_TAB_CHEATS = 3
 };
 
+enum BottomRightMode {
+    BR_MODE_PREVIEW = 0,
+    BR_MODE_DISPLAY = 1,
+    BR_MODE_PALETTE = 2
+};
+
+void uiSetBottomRightMode(BottomRightMode mode);
+BottomRightMode uiGetBottomRightMode();
+void uiCycleBottomRightMode();
+bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser);
+
 const C3D_Mtx* gfxGetProjectionTop();
 const C3D_Mtx* gfxGetProjectionBottom();
 int gfxGetULocProjection();
@@ -39,6 +52,10 @@ void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColo
 void uiDrawPillBadge(float x, float y, float w, float h, const char* text, u32 bgColor, u32 textColor);
 void uiDrawModernButton(float x, float y, float w, float h, const char* label, u32 baseColor, u32 borderColor, bool isPressed = false);
 void uiDrawText(float x, float y, const char* str, u32 color);
+void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text);
+float uiGetSysTextWidth(float scaleX, const char* text);
+void uiDrawFolderIcon(float x, float y);
+void uiDrawCartridgeIcon(float x, float y, bool isGBC);
 void uiDrawWireframeTest();
 void uiDrawFileChooser(const FileChooser* chooser);
 void uiDrawTopScreenHub(float eyeOffset = 0.0f);

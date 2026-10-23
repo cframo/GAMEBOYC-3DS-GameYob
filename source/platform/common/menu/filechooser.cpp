@@ -23,10 +23,10 @@
 #define FLAG_SUSPENDED  2
 #define FLAG_ROM        4
 
-static const float ITEM_HEIGHT = 14.0f;
+static const float ITEM_HEIGHT = 20.0f;
 static const float LIST_TOP = 24.0f;
-static const float LIST_BOTTOM = 208.0f;
-static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 184.0f
+static const float LIST_BOTTOM = 204.0f;
+static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 180.0f
 static const float FRICTION = 0.92f;
 static const float SPRING_K = 0.35f;
 static const float SPRING_DAMP = 0.65f;
@@ -44,11 +44,19 @@ FileChooser* getActiveFileChooser() {
 }
 
 FileChooser::FileChooser(std::string directory, std::vector<std::string> extensions, bool canQuit) {
+    if(directory == "/" || directory == "") {
+        struct stat st;
+        if(stat("/3ds/gameyob/roms", &st) == 0 && S_ISDIR(st.st_mode)) {
+            directory = "/3ds/gameyob/roms/";
+        } else if(stat("/roms", &st) == 0 && S_ISDIR(st.st_mode)) {
+            directory = "/roms/";
+        }
+    }
     this->directory = directory;
     this->extensions = extensions;
     this->canQuit = canQuit;
     this->numFiles = 0;
-    this->filesPerPage = 12;
+    this->filesPerPage = 8;
     this->scrollY = 0.0f;
     this->targetScrollY = 0.0f;
     this->scrollVelocity = 0.0f;
@@ -350,8 +358,28 @@ void FileChooser::refreshContents() {
         // Read file list
         dirent* entry;
         while((entry = readdir(dir)) != NULL) {
-            if(strcmp(entry->d_name, "..") == 0) {
+            if(strcmp(entry->d_name, "..") == 0 || strcmp(entry->d_name, ".") == 0) {
                 continue;
+            }
+
+            // Ocultar archivos y carpetas ocultas que comiencen con '.' (ej. .Trash-1000)
+            if(entry->d_name[0] == '.') {
+                continue;
+            }
+
+            // En la raíz '/', ocultar carpetas exclusivas del sistema CFW
+            if(this->directory == "/" || this->directory == "") {
+                if((entry->d_type & DT_DIR) && (
+                    strcasecmp(entry->d_name, "boot9strap") == 0 ||
+                    strcasecmp(entry->d_name, "luma") == 0 ||
+                    strcasecmp(entry->d_name, "gm9") == 0 ||
+                    strcasecmp(entry->d_name, "Nintendo 3DS") == 0 ||
+                    strcasecmp(entry->d_name, "DCIM") == 0 ||
+                    strcasecmp(entry->d_name, "fbi") == 0 ||
+                    strcasecmp(entry->d_name, "config") == 0
+                )) {
+                    continue;
+                }
             }
 
             char* ext = strrchr(entry->d_name, '.') + 1;
@@ -557,7 +585,7 @@ bool FileChooser::updateChooser(char** result) {
         hidTouchRead(&touchCurr);
         float dy = (float) (this->touchPrevPos.py - touchCurr.py);
         float totalDist = hypotf((float) (touchCurr.px - this->touchStartPos.px), (float) (touchCurr.py - this->touchStartPos.py));
-        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px >= 8 && this->touchStartPos.px <= 156 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 182 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
             this->isDragging = true;
         }
         if(this->isDragging) {
@@ -573,49 +601,66 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     if(kUp & KEY_TOUCH) {
-        if(!this->isDragging && this->touchStartPos.px >= 8 && this->touchStartPos.px <= 156 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
-            // TAP en lista: calcular elemento pulsado
-            float tapY = (float) this->touchStartPos.py - LIST_TOP + this->scrollY;
-            int tappedIndex = (int) (tapY / ITEM_HEIGHT);
-            if(tappedIndex >= 0 && tappedIndex < this->numFiles) {
-                if(this->selection == tappedIndex) {
-                    // Doble tap o confirmar elemento seleccionado
-                    if(this->navigateToSelection(result)) {
-                        stateNum = uiGetPreviewSlot();
-                        return true;
+        if(!this->isDragging && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 182 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+            // TAP en casillas de scrollbar ▲ / ▼
+            if(this->touchStartPos.px >= 171 && this->touchStartPos.px <= 183) {
+                if(this->touchStartPos.py <= 38) {
+                    this->selection--;
+                    if(this->selection < 0) {
+                        this->selection = 0;
                     }
-                } else {
-                    this->selection = tappedIndex;
+                    this->updateScrollUp();
+                } else if(this->touchStartPos.py >= 190) {
+                    this->selection++;
+                    if(this->selection >= this->numFiles) {
+                        this->selection = this->numFiles - 1;
+                    }
+                    this->updateScrollDown();
                 }
-            }
-        } else if(!this->isDragging && this->touchStartPos.py >= 144 && this->touchStartPos.py <= 168) {
-            // TAP en flechas de selección de savestate slot
-            if(this->touchStartPos.px >= 174 && this->touchStartPos.px <= 210) {
-                uiCyclePreviewSlot(-1);
-            } else if(this->touchStartPos.px >= 230 && this->touchStartPos.px <= 266) {
-                uiCyclePreviewSlot(1);
-            }
-        } else if(!this->isDragging && this->touchStartPos.px >= 164 && this->touchStartPos.px <= 312 && this->touchStartPos.py >= 180 && this->touchStartPos.py <= 208) {
-            // TAP en atajo de iniciar ROM del panel derecho
-            if(this->navigateToSelection(result)) {
-                stateNum = uiGetPreviewSlot();
-                return true;
+            } else {
+                // TAP en lista: calcular elemento pulsado
+                float tapY = (float) this->touchStartPos.py - LIST_TOP + this->scrollY;
+                int tappedIndex = (int) (tapY / ITEM_HEIGHT);
+                if(tappedIndex >= 0 && tappedIndex < this->numFiles) {
+                    if(this->selection == tappedIndex) {
+                        // Doble tap o confirmar elemento seleccionado
+                        if(this->navigateToSelection(result)) {
+                            stateNum = uiGetPreviewSlot();
+                            return true;
+                        }
+                    } else {
+                        this->selection = tappedIndex;
+                    }
+                }
             }
         } else if(!this->isDragging && this->touchStartPos.py >= 212 && this->touchStartPos.py <= 236) {
             // TAP en Dock inferior:
-            // Botón Display (6..78), Paleta (82..154), Carpeta (158..238), Salir (242..314)
-            if(this->touchStartPos.px >= 6 && this->touchStartPos.px <= 78) {
-                uiOpenConfigModal(UI_TAB_VIDEO);
-            } else if(this->touchStartPos.px >= 82 && this->touchStartPos.px <= 154) {
-                mgrCyclePalette();
-            } else if(this->touchStartPos.px >= 158 && this->touchStartPos.px <= 238) {
+            // Botón Display (8..78), Paleta (84..154), Carpeta (160..236), Salir (242..312)
+            if(this->touchStartPos.px >= 8 && this->touchStartPos.px <= 78) {
+                if(uiGetBottomRightMode() == BR_MODE_DISPLAY) {
+                    uiSetBottomRightMode(BR_MODE_PREVIEW);
+                } else {
+                    uiSetBottomRightMode(BR_MODE_DISPLAY);
+                }
+            } else if(this->touchStartPos.px >= 84 && this->touchStartPos.px <= 154) {
+                if(uiGetBottomRightMode() == BR_MODE_PALETTE) {
+                    uiSetBottomRightMode(BR_MODE_PREVIEW);
+                } else {
+                    uiSetBottomRightMode(BR_MODE_PALETTE);
+                }
+            } else if(this->touchStartPos.px >= 160 && this->touchStartPos.px <= 236) {
                 this->navigateBack();
                 this->refreshContents();
                 this->scrollY = 0.0f;
                 this->scrollVelocity = 0.0f;
-            } else if(this->touchStartPos.px >= 242 && this->touchStartPos.px <= 314) {
+            } else if(this->touchStartPos.px >= 242 && this->touchStartPos.px <= 312) {
                 systemRequestExit();
                 *result = nullptr;
+                return true;
+            }
+        } else if(!this->isDragging && this->touchStartPos.px >= 188 && this->touchStartPos.px <= 312 && this->touchStartPos.py >= 24 && this->touchStartPos.py <= 208) {
+            // TAP en Panel Derecho Contextual:
+            if(uiHandleRightPanelTouch(this->touchStartPos.px, this->touchStartPos.py, result, this)) {
                 return true;
             }
         }
