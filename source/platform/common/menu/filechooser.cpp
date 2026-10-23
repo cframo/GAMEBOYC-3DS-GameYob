@@ -370,8 +370,10 @@ void FileChooser::refreshContents() {
             // En la raíz '/', ocultar carpetas y rutas exclusivas del sistema CFW
             if(this->directory == "/" || this->directory == "") {
                 static const char* s_systemDirs[] = {
-                    "3ds", "gba", "nds", "cia", "boot9strap", "luma", "gm9",
-                    "fbi", "config", "dcim", "nintendo 3ds", "retroarch", "themes", "dumps"
+                    "system volume information", "homebrew launcher", "mgba", "jksv",
+                    "checkpoint", "gm9", "luma", "3ds", "gba", "nds", "cia", "cias",
+                    "boot9strap", "fbi", "config", "dcim", "nintendo 3ds", "retroarch",
+                    "themes", "dumps"
                 };
                 bool isSystemDir = false;
                 for(size_t i = 0; i < sizeof(s_systemDirs) / sizeof(s_systemDirs[0]); i++) {
@@ -604,9 +606,13 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     if(kUp & KEY_TOUCH) {
-        if(!this->isDragging && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 186 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
-            // TAP en casillas de scrollbar ▲ / ▼
-            if(this->touchStartPos.px >= 172 && this->touchStartPos.px <= 186) {
+        bool isPreview = (uiGetBottomRightMode() == BR_MODE_PREVIEW);
+        float listRight = isPreview ? 190.0f : 126.0f;
+        float panelLeft = isPreview ? 194.0f : 130.0f;
+
+        if(!this->isDragging && this->touchStartPos.px >= 8 && this->touchStartPos.px <= listRight && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+            // TAP en casillas de scrollbar ▲ / ▼ (solo en modo preview con ancho completo)
+            if(isPreview && this->touchStartPos.px >= 174 && this->touchStartPos.px <= 190) {
                 if(this->touchStartPos.py <= 38) {
                     this->selection--;
                     if(this->selection < 0) {
@@ -638,30 +644,30 @@ bool FileChooser::updateChooser(char** result) {
             }
         } else if(!this->isDragging && this->touchStartPos.py >= 208 && this->touchStartPos.py <= 234) {
             // TAP en Dock inferior:
-            // Botón Display (8..80), Paleta (84..156), Carpeta (160..236), Salir (240..312)
+            // Botón Display (8..80), Paleta (86..158), Directorio (164..236), Salir (242..314)
             if(this->touchStartPos.px >= 8 && this->touchStartPos.px <= 80) {
                 if(uiGetBottomRightMode() == BR_MODE_DISPLAY) {
                     uiSetBottomRightMode(BR_MODE_PREVIEW);
                 } else {
                     uiSetBottomRightMode(BR_MODE_DISPLAY);
                 }
-            } else if(this->touchStartPos.px >= 84 && this->touchStartPos.px <= 156) {
+            } else if(this->touchStartPos.px >= 86 && this->touchStartPos.px <= 158) {
                 if(uiGetBottomRightMode() == BR_MODE_PALETTE) {
                     uiSetBottomRightMode(BR_MODE_PREVIEW);
                 } else {
                     uiSetBottomRightMode(BR_MODE_PALETTE);
                 }
-            } else if(this->touchStartPos.px >= 160 && this->touchStartPos.px <= 236) {
+            } else if(this->touchStartPos.px >= 164 && this->touchStartPos.px <= 236) {
                 this->navigateBack();
                 this->refreshContents();
                 this->scrollY = 0.0f;
                 this->scrollVelocity = 0.0f;
-            } else if(this->touchStartPos.px >= 240 && this->touchStartPos.px <= 312) {
+            } else if(this->touchStartPos.px >= 242 && this->touchStartPos.px <= 314) {
                 systemRequestExit();
                 *result = nullptr;
                 return true;
             }
-        } else if(!this->isDragging && this->touchStartPos.px >= 192 && this->touchStartPos.px <= 310 && this->touchStartPos.py >= 24 && this->touchStartPos.py <= 202) {
+        } else if(!this->isDragging && this->touchStartPos.px >= panelLeft && this->touchStartPos.px <= 314 && this->touchStartPos.py >= 22 && this->touchStartPos.py <= 204) {
             // TAP en Panel Derecho Contextual:
             if(uiHandleRightPanelTouch(this->touchStartPos.px, this->touchStartPos.py, result, this)) {
                 return true;

@@ -53,11 +53,17 @@ void uiDrawPillBadge(float x, float y, float w, float h, const char* text, u32 b
 void uiDrawModernButton(float x, float y, float w, float h, const char* label, u32 baseColor, u32 borderColor, bool isPressed = false);
 void uiDrawTextScaled(float x, float y, float scale, const char* str, u32 color);
 void uiDrawText(float x, float y, const char* str, u32 color);
-float uiGetTextWidth(const char* str, float scale = 0.75f);
+float uiGetTextWidth(const char* str, float scale = 1.0f);
+void uiDrawTextClipped(float x, float y, float maxWidth, const char* text, u32 color);
+void uiDrawTextRight(float rightX, float y, const char* text, u32 color);
+void uiDrawTextCentered(float centerX, float y, const char* text, u32 color);
 void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text);
 float uiGetSysTextWidth(float scaleX, const char* text);
 void uiDrawFolderIcon(float x, float y);
 void uiDrawCartridgeIcon(float x, float y, bool isGBC);
+void uiDrawGearIcon(float x, float y, u32 color = UI_COLOR_WHITE);
+void uiDrawPaletteIcon(float x, float y);
+void uiDrawInfoBadge(float x, float y);
 void uiDrawWireframeTest();
 void uiUpdateMenuState();
 void uiDrawFileChooser(const FileChooser* chooser);
