@@ -446,6 +446,8 @@ void gfxTakeScreenshot() {
 }
 
 void gfxDrawScreen() {
+    uiUpdateMenuState();
+
     const int screenTexSize = 256;
     GPU_TEXTURE_FILTER_PARAM filter = GPU_NEAREST;
 

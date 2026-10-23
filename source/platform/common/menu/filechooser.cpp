@@ -23,10 +23,10 @@
 #define FLAG_SUSPENDED  2
 #define FLAG_ROM        4
 
-static const float ITEM_HEIGHT = 20.0f;
+static const float ITEM_HEIGHT = 24.0f;
 static const float LIST_TOP = 24.0f;
-static const float LIST_BOTTOM = 204.0f;
-static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 180.0f
+static const float LIST_BOTTOM = 202.0f;
+static const float LIST_HEIGHT = LIST_BOTTOM - LIST_TOP; // 178.0f
 static const float FRICTION = 0.92f;
 static const float SPRING_K = 0.35f;
 static const float SPRING_DAMP = 0.65f;
@@ -56,7 +56,7 @@ FileChooser::FileChooser(std::string directory, std::vector<std::string> extensi
     this->extensions = extensions;
     this->canQuit = canQuit;
     this->numFiles = 0;
-    this->filesPerPage = 8;
+    this->filesPerPage = 7;
     this->scrollY = 0.0f;
     this->targetScrollY = 0.0f;
     this->scrollVelocity = 0.0f;
@@ -362,22 +362,25 @@ void FileChooser::refreshContents() {
                 continue;
             }
 
-            // Ocultar archivos y carpetas ocultas que comiencen con '.' (ej. .Trash-1000)
-            if(entry->d_name[0] == '.') {
+            // Ocultar archivos y carpetas ocultas que comiencen con '.' o '_' (ej. .Trash-1000, _temp)
+            if(entry->d_name[0] == '.' || entry->d_name[0] == '_') {
                 continue;
             }
 
-            // En la raíz '/', ocultar carpetas exclusivas del sistema CFW
+            // En la raíz '/', ocultar carpetas y rutas exclusivas del sistema CFW
             if(this->directory == "/" || this->directory == "") {
-                if((entry->d_type & DT_DIR) && (
-                    strcasecmp(entry->d_name, "boot9strap") == 0 ||
-                    strcasecmp(entry->d_name, "luma") == 0 ||
-                    strcasecmp(entry->d_name, "gm9") == 0 ||
-                    strcasecmp(entry->d_name, "Nintendo 3DS") == 0 ||
-                    strcasecmp(entry->d_name, "DCIM") == 0 ||
-                    strcasecmp(entry->d_name, "fbi") == 0 ||
-                    strcasecmp(entry->d_name, "config") == 0
-                )) {
+                static const char* s_systemDirs[] = {
+                    "3ds", "gba", "nds", "cia", "boot9strap", "luma", "gm9",
+                    "fbi", "config", "dcim", "nintendo 3ds", "retroarch", "themes", "dumps"
+                };
+                bool isSystemDir = false;
+                for(size_t i = 0; i < sizeof(s_systemDirs) / sizeof(s_systemDirs[0]); i++) {
+                    if(strcasecmp(entry->d_name, s_systemDirs[i]) == 0) {
+                        isSystemDir = true;
+                        break;
+                    }
+                }
+                if(isSystemDir) {
                     continue;
                 }
             }
@@ -585,7 +588,7 @@ bool FileChooser::updateChooser(char** result) {
         hidTouchRead(&touchCurr);
         float dy = (float) (this->touchPrevPos.py - touchCurr.py);
         float totalDist = hypotf((float) (touchCurr.px - this->touchStartPos.px), (float) (touchCurr.py - this->touchStartPos.py));
-        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 182 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+        if(!this->isDragging && totalDist > DRAG_THRESHOLD && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 186 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
             this->isDragging = true;
         }
         if(this->isDragging) {
@@ -601,16 +604,16 @@ bool FileChooser::updateChooser(char** result) {
     }
 
     if(kUp & KEY_TOUCH) {
-        if(!this->isDragging && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 182 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
+        if(!this->isDragging && this->touchStartPos.px >= 10 && this->touchStartPos.px <= 186 && this->touchStartPos.py >= LIST_TOP && this->touchStartPos.py <= LIST_BOTTOM) {
             // TAP en casillas de scrollbar ▲ / ▼
-            if(this->touchStartPos.px >= 171 && this->touchStartPos.px <= 183) {
+            if(this->touchStartPos.px >= 172 && this->touchStartPos.px <= 186) {
                 if(this->touchStartPos.py <= 38) {
                     this->selection--;
                     if(this->selection < 0) {
                         this->selection = 0;
                     }
                     this->updateScrollUp();
-                } else if(this->touchStartPos.py >= 190) {
+                } else if(this->touchStartPos.py >= 188) {
                     this->selection++;
                     if(this->selection >= this->numFiles) {
                         this->selection = this->numFiles - 1;
@@ -633,16 +636,16 @@ bool FileChooser::updateChooser(char** result) {
                     }
                 }
             }
-        } else if(!this->isDragging && this->touchStartPos.py >= 212 && this->touchStartPos.py <= 236) {
+        } else if(!this->isDragging && this->touchStartPos.py >= 208 && this->touchStartPos.py <= 234) {
             // TAP en Dock inferior:
-            // Botón Display (8..78), Paleta (84..154), Carpeta (160..236), Salir (242..312)
-            if(this->touchStartPos.px >= 8 && this->touchStartPos.px <= 78) {
+            // Botón Display (8..80), Paleta (84..156), Carpeta (160..236), Salir (240..312)
+            if(this->touchStartPos.px >= 8 && this->touchStartPos.px <= 80) {
                 if(uiGetBottomRightMode() == BR_MODE_DISPLAY) {
                     uiSetBottomRightMode(BR_MODE_PREVIEW);
                 } else {
                     uiSetBottomRightMode(BR_MODE_DISPLAY);
                 }
-            } else if(this->touchStartPos.px >= 84 && this->touchStartPos.px <= 154) {
+            } else if(this->touchStartPos.px >= 84 && this->touchStartPos.px <= 156) {
                 if(uiGetBottomRightMode() == BR_MODE_PALETTE) {
                     uiSetBottomRightMode(BR_MODE_PREVIEW);
                 } else {
@@ -653,12 +656,12 @@ bool FileChooser::updateChooser(char** result) {
                 this->refreshContents();
                 this->scrollY = 0.0f;
                 this->scrollVelocity = 0.0f;
-            } else if(this->touchStartPos.px >= 242 && this->touchStartPos.px <= 312) {
+            } else if(this->touchStartPos.px >= 240 && this->touchStartPos.px <= 312) {
                 systemRequestExit();
                 *result = nullptr;
                 return true;
             }
-        } else if(!this->isDragging && this->touchStartPos.px >= 188 && this->touchStartPos.px <= 312 && this->touchStartPos.py >= 24 && this->touchStartPos.py <= 208) {
+        } else if(!this->isDragging && this->touchStartPos.px >= 192 && this->touchStartPos.px <= 310 && this->touchStartPos.py >= 24 && this->touchStartPos.py <= 202) {
             // TAP en Panel Derecho Contextual:
             if(uiHandleRightPanelTouch(this->touchStartPos.px, this->touchStartPos.py, result, this)) {
                 return true;
@@ -824,7 +827,7 @@ bool FileChooser::updateChooser(char** result) {
  */
 char* FileChooser::chooseFile() {
 #ifdef BACKEND_3DS
-    this->filesPerPage = 12;
+    this->filesPerPage = 7;
     this->refreshContents();
     this->scrollY = 0.0f;
     this->targetScrollY = 0.0f;

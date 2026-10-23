@@ -51,12 +51,15 @@ void uiDrawDropShadow(float x, float y, float w, float h, float radius, u8 maxAl
 void uiDrawRoundedRect(float x, float y, float w, float h, float r, u32 fillColor, u32 borderColor = 0, float borderWidth = 0.0f);
 void uiDrawPillBadge(float x, float y, float w, float h, const char* text, u32 bgColor, u32 textColor);
 void uiDrawModernButton(float x, float y, float w, float h, const char* label, u32 baseColor, u32 borderColor, bool isPressed = false);
+void uiDrawTextScaled(float x, float y, float scale, const char* str, u32 color);
 void uiDrawText(float x, float y, const char* str, u32 color);
+float uiGetTextWidth(const char* str, float scale = 0.75f);
 void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text);
 float uiGetSysTextWidth(float scaleX, const char* text);
 void uiDrawFolderIcon(float x, float y);
 void uiDrawCartridgeIcon(float x, float y, bool isGBC);
 void uiDrawWireframeTest();
+void uiUpdateMenuState();
 void uiDrawFileChooser(const FileChooser* chooser);
 void uiDrawTopScreenHub(float eyeOffset = 0.0f);
 
