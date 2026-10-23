@@ -349,6 +349,53 @@ void uiRenderInit() {
 
     memset(temp, 0, 256 * 256 * sizeof(u32));
 
+    // Tabla estática s_glyphWidth y s_glyphAdvance 100% segura para los 256 elementos
+    for(int i = 0; i < 256; i++) {
+        s_glyphWidth[i] = 5.0f;
+        s_glyphAdvance[i] = 7.0f; // Por defecto: advance = width + 2px colchón
+    }
+
+    // Caracteres delgados (width 2, advance 4)
+    static const uint8_t narrowChars[] = {'i', 'l', '!', '.', ':', ';', ',', '|', '\''};
+    for(uint8_t ch : narrowChars) {
+        s_glyphWidth[ch] = 2.0f;
+        s_glyphAdvance[ch] = 4.0f;
+    }
+
+    // Caracteres medianos (width 3, advance 5)
+    static const uint8_t medChars[] = {'I', 't', 'j', 'f', '(', ')', '[', ']', '<', '>'};
+    for(uint8_t ch : medChars) {
+        s_glyphWidth[ch] = 3.0f;
+        s_glyphAdvance[ch] = 5.0f;
+    }
+
+    // Caracteres estándar 'a'..'z', '0'..'9', 'A'..'Z'
+    for(int c = 'a'; c <= 'z'; c++) {
+        if(s_glyphWidth[c] == 5.0f) {
+            s_glyphAdvance[c] = 7.0f;
+        }
+    }
+    for(int c = 'A'; c <= 'Z'; c++) {
+        if(s_glyphWidth[c] == 5.0f) {
+            s_glyphAdvance[c] = 7.0f;
+        }
+    }
+    for(int c = '0'; c <= '9'; c++) {
+        s_glyphWidth[c] = 5.0f;
+        s_glyphAdvance[c] = 7.0f;
+    }
+
+    // Caracteres anchos (width 6, advance 8)
+    s_glyphWidth['m'] = 6.0f; s_glyphAdvance['m'] = 8.0f;
+    s_glyphWidth['w'] = 6.0f; s_glyphAdvance['w'] = 8.0f;
+    s_glyphWidth['M'] = 6.0f; s_glyphAdvance['M'] = 8.0f;
+    s_glyphWidth['W'] = 6.0f; s_glyphAdvance['W'] = 8.0f;
+
+    // Espacio en blanco (ancho 0, avance 4)
+    s_glyphWidth[' '] = 0.0f;
+    s_glyphAdvance[' '] = 4.0f;
+
+    // Generar atlas en memoria lineal sin sombras quemadas
     for(int c = 0; c < 256; c++) {
         int cellCol = c & 0x0F;
         int cellRow = (c >> 4) & 0x0F;
@@ -358,7 +405,7 @@ void uiRenderInit() {
         int min_col = 8;
         int max_col = -1;
         for(int y = 0; y < 8; y++) {
-            u8 row = font5x7_data[c][y];
+            uint8_t row = font5x7_data[c][y];
             if(row != 0) {
                 for(int x = 0; x < 8; x++) {
                     if(row & (0x80 >> x)) {
@@ -370,19 +417,12 @@ void uiRenderInit() {
         }
 
         if(max_col < 0) {
-            s_glyphWidth[c] = 0.0f;
-            s_glyphAdvance[c] = 4.0f;
             continue;
         }
 
-        int charW = max_col - min_col + 1;
-        s_glyphWidth[c] = (float)charW;
-        s_glyphAdvance[c] = (float)charW + 1.0f; // REGLA MATEMATICA ESTRICTA: El avance SIEMPRE es (width + 1)
-
         int shift = min_col;
-        // Glifo principal a (x, y) en blanco puro 0xFFFFFFFF (SIN sombras difusas quemadas en la textura)
         for(int sub_y = 0; sub_y < 8; sub_y++) {
-            u8 rowBits = font5x7_data[c][sub_y];
+            uint8_t rowBits = font5x7_data[c][sub_y];
             if(rowBits == 0) continue;
             for(int sub_x = 0; sub_x < 8; sub_x++) {
                 if(rowBits & (0x80 >> sub_x)) {
@@ -820,12 +860,39 @@ static inline u8 getNextGlyph(const char*& p) {
     return c;
 }
 
-void uiDrawTextScaled(float x, float y, float scale, const char* str, u32 color) {
-    if(!str || *str == '\0' || !s_fontAtlasInit) {
+static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, float scaleY, u32 color) {
+    float gw = (float)s_glyphWidth[c];
+    if(gw <= 0.0f) {
         return;
     }
+    float gh = 10.0f;
+    int cellX = (c & 0x0F) * 16;
+    int cellY = (c >> 4) * 16;
+    float u0 = (float)cellX / 256.0f;
+    float u1 = ((float)cellX + gw) / 256.0f;
+    float v0 = (float)cellY / 256.0f;
+    float v1 = ((float)cellY + gh) / 256.0f;
+
+    // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
-        color |= 0xFF000000;
+        if((color & 0x000000FF) != 0 && (color & 0x00FFFF00) == 0) {
+            color = uiColorRGBA(0, 0, 0, (color & 0xFF));
+        } else {
+            color |= 0xFF000000;
+        }
+    }
+
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvColor(env0, color);
+
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    emitUiQuad(x, y, x + (gw * scaleX), y + (gh * scaleY), u0, v0, u1, v1);
+    C3D_ImmDrawEnd();
+}
+
+void uiDrawTextScaled(float x, float y, float scale, const char* text, u32 color) {
+    if(!text || *text == '\0' || !s_fontAtlasInit) {
+        return;
     }
 
     C3D_TexBind(0, &s_fontAtlasTex);
@@ -843,89 +910,100 @@ void uiDrawTextScaled(float x, float y, float scale, const char* str, u32 color)
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
     C3D_AlphaTest(true, GPU_GREATER, 0);
 
-    bool hasShadow = ((color & 0x00FFFFFF) != 0);
-    int startPass = hasShadow ? 0 : 1;
-
-    for(int pass = startPass; pass <= 1; pass++) {
-        float ox = (pass == 0) ? (1.0f * scale) : 0.0f;
-        float oy = (pass == 0) ? (1.0f * scale) : 0.0f;
-        u32 passCol = (pass == 0) ? uiColorRGBA(0, 0, 0, 140) : color;
-
-        C3D_TexEnvColor(env0, passCol);
-        C3D_ImmDrawBegin(GPU_TRIANGLES);
-
-        float curX = x + ox;
-        float curY = y + oy;
-        const char* p = str;
-        while(*p != '\0') {
-            if(*p == '\n') {
-                curX = x + ox;
-                curY += 12.0f * scale;
-                p++;
-                continue;
-            }
-            if(*p == '\r') {
-                p++;
-                continue;
-            }
-
-            u8 glyphIdx = getNextGlyph(p);
-            if(glyphIdx == 0) continue;
-
-            float gw = s_glyphWidth[glyphIdx];
-            float ga = s_glyphAdvance[glyphIdx];
-            if(gw > 0.0f) {
-                int cellX = (glyphIdx & 0x0F) * 16;
-                int cellY = (glyphIdx >> 4) * 16;
-                float u0 = (float)cellX / 256.0f;
-                float u1 = ((float)cellX + gw) / 256.0f;
-                float v0 = (float)cellY / 256.0f;
-                float v1 = ((float)cellY + 10.0f) / 256.0f;
-                float x0 = curX;
-                float x1 = curX + (gw * scale);
-                float y0 = curY;
-                float y1 = curY + (10.0f * scale);
-                emitUiQuad(x0, y0, x1, y1, u0, v0, u1, v1);
-            }
-            curX += ga * scale;
+    float penX = x;
+    float penY = y;
+    while(*text != '\0') {
+        if(*text == '\n') {
+            penX = x;
+            penY += 12.0f * scale;
+            text++;
+            continue;
+        }
+        if(*text == '\r') {
+            text++;
+            continue;
         }
 
-        C3D_ImmDrawEnd();
+        uint8_t c = (uint8_t)(*text);
+        if(c == ' ') {
+            penX += (4.0f * scale);
+            text++;
+            continue;
+        }
+        if(c < 32 || c == 127) {
+            text++;
+            continue;
+        }
+
+        if((c & 0x80) != 0) {
+            c = getNextGlyph(text);
+            if(c == 0) continue;
+            if(c == ' ') {
+                penX += (4.0f * scale);
+                continue;
+            }
+        } else {
+            text++;
+        }
+
+        // Sombra 1px abajo-derecha en negro translúcido directo
+        uiEmitGlyphQuad(penX + (1.0f * scale), penY + (1.0f * scale), c, scale, scale, 0x00000088);
+        // Letra principal encima
+        uiEmitGlyphQuad(penX, penY, c, scale, scale, color);
+        penX += (s_glyphAdvance[c] * scale);
     }
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
 }
 
-float uiGetTextWidth(const char* str, float scale) {
-    if(!str || *str == '\0' || !s_fontAtlasInit) {
+float uiGetTextWidth(const char* text, float scale) {
+    if(!text || *text == '\0' || !s_fontAtlasInit) {
         return 0.0f;
     }
     float totalW = 0.0f;
     float maxLineW = 0.0f;
-    const char* p = str;
-    while(*p != '\0') {
-        if(*p == '\n') {
+    while(*text != '\0') {
+        if(*text == '\n') {
             if(totalW > maxLineW) maxLineW = totalW;
             totalW = 0.0f;
-            p++;
+            text++;
             continue;
         }
-        if(*p == '\r') {
-            p++;
+        if(*text == '\r') {
+            text++;
             continue;
         }
 
-        u8 glyphIdx = getNextGlyph(p);
-        if(glyphIdx == 0) continue;
+        uint8_t c = (uint8_t)(*text);
+        if(c == ' ') {
+            totalW += (4.0f * scale);
+            text++;
+            continue;
+        }
+        if(c < 32 || c == 127) {
+            text++;
+            continue;
+        }
 
-        totalW += s_glyphAdvance[glyphIdx] * scale;
+        if((c & 0x80) != 0) {
+            c = getNextGlyph(text);
+            if(c == 0) continue;
+            if(c == ' ') {
+                totalW += (4.0f * scale);
+                continue;
+            }
+        } else {
+            text++;
+        }
+
+        totalW += (s_glyphAdvance[c] * scale);
     }
     if(totalW > maxLineW) maxLineW = totalW;
     return maxLineW;
 }
 
-void uiDrawText(float x, float y, const char* str, u32 color) {
-    uiDrawTextScaled(x, y, 1.0f, str, color);
+void uiDrawText(float x, float y, const char* text, u32 color) {
+    uiDrawTextScaled(x, y, 1.0f, text, color);
 }
 
 void uiDrawTextRight(float rightX, float y, const char* text, u32 color) {
@@ -942,9 +1020,6 @@ void uiDrawTextClipped(float x, float y, float maxWidth, const char* text, u32 c
     if(!text || *text == '\0' || !s_fontAtlasInit || maxWidth <= 0.0f) {
         return;
     }
-    if((color & 0xFF000000) == 0) {
-        color |= 0xFF000000;
-    }
 
     C3D_TexBind(0, &s_fontAtlasTex);
 
@@ -961,59 +1036,54 @@ void uiDrawTextClipped(float x, float y, float maxWidth, const char* text, u32 c
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
     C3D_AlphaTest(true, GPU_GREATER, 0);
 
-    bool hasShadow = ((color & 0x00FFFFFF) != 0);
-    int startPass = hasShadow ? 0 : 1;
-
-    for(int pass = startPass; pass <= 1; pass++) {
-        float ox = (pass == 0) ? 1.0f : 0.0f;
-        float oy = (pass == 0) ? 1.0f : 0.0f;
-        u32 passCol = (pass == 0) ? uiColorRGBA(0, 0, 0, 140) : color;
-
-        C3D_TexEnvColor(env0, passCol);
-        C3D_ImmDrawBegin(GPU_TRIANGLES);
-
-        float curX = x + ox;
-        float curY = y + oy;
-        const char* p = text;
-
-        while(*p != '\0') {
-            u8 glyphIdx = getNextGlyph(p);
-            if(glyphIdx == 0) continue;
-
-            float gw = s_glyphWidth[glyphIdx];
-            float ga = s_glyphAdvance[glyphIdx];
-
-            float relX = curX - (x + ox);
-            if(relX + std::max(gw, ga) > maxWidth) {
-                float dotAdv = s_glyphAdvance['.'];
-                float dotW = s_glyphWidth['.'];
-                if(relX + dotAdv * 2.0f <= maxWidth) {
-                    int cellX = ('.' & 0x0F) * 16;
-                    int cellY = ('.' >> 4) * 16;
-                    float u0 = (float)cellX / 256.0f;
-                    float u1 = ((float)cellX + dotW) / 256.0f;
-                    float v0 = (float)cellY / 256.0f;
-                    float v1 = ((float)cellY + 10.0f) / 256.0f;
-                    emitUiQuad(curX, curY, curX + dotW, curY + 10.0f, u0, v0, u1, v1);
-                    curX += dotAdv;
-                    emitUiQuad(curX, curY, curX + dotW, curY + 10.0f, u0, v0, u1, v1);
-                }
+    float penX = x;
+    while(*text != '\0') {
+        uint8_t c = (uint8_t)(*text);
+        if(c == ' ') {
+            if((penX - x) + 4.0f > maxWidth) {
                 break;
             }
-
-            if(gw > 0.0f) {
-                int cellX = (glyphIdx & 0x0F) * 16;
-                int cellY = (glyphIdx >> 4) * 16;
-                float u0 = (float)cellX / 256.0f;
-                float u1 = ((float)cellX + gw) / 256.0f;
-                float v0 = (float)cellY / 256.0f;
-                float v1 = ((float)cellY + 10.0f) / 256.0f;
-                emitUiQuad(curX, curY, curX + gw, curY + 10.0f, u0, v0, u1, v1);
-            }
-            curX += ga;
+            penX += 4.0f;
+            text++;
+            continue;
+        }
+        if(c < 32 || c == 127) {
+            text++;
+            continue;
         }
 
-        C3D_ImmDrawEnd();
+        if((c & 0x80) != 0) {
+            c = getNextGlyph(text);
+            if(c == 0) continue;
+            if(c == ' ') {
+                if((penX - x) + 4.0f > maxWidth) {
+                    break;
+                }
+                penX += 4.0f;
+                continue;
+            }
+        } else {
+            text++;
+        }
+
+        float gw = s_glyphWidth[c];
+        float ga = s_glyphAdvance[c];
+
+        if((penX - x) + std::max(gw, ga) > maxWidth) {
+            float dotAdv = s_glyphAdvance['.'];
+            if((penX - x) + dotAdv * 2.0f <= maxWidth) {
+                uiEmitGlyphQuad(penX + 1.0f, y + 1.0f, '.', 1.0f, 1.0f, 0x00000088);
+                uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
+                penX += dotAdv;
+                uiEmitGlyphQuad(penX + 1.0f, y + 1.0f, '.', 1.0f, 1.0f, 0x00000088);
+                uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
+            }
+            break;
+        }
+
+        uiEmitGlyphQuad(penX + 1.0f, y + 1.0f, c, 1.0f, 1.0f, 0x00000088);
+        uiEmitGlyphQuad(penX, y, c, 1.0f, 1.0f, color);
+        penX += ga;
     }
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
