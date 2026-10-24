@@ -272,129 +272,69 @@ void uiRenderInit() {
     static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(fontTable[0xA1], invExc, 8);
     static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(fontTable[0xBF], invQst, 8);
 
-    // Generar atlas 256x256 con antialiasing por cobertura alfa y sombras horneadas
+    // Generar atlas 256x256 con trazo fino nítido 1:1 y sombra horneada a (cellX + 1, cellY + 1)
+    u32 shadowCol = uiColorRGBA(0, 0, 0, 140);
     for(int c = 0; c < 256; c++) {
         int cellCol = c & 0x0F;
         int cellRow = (c >> 4) & 0x0F;
         int cellX = cellCol * 16;
         int cellY = cellRow * 16;
 
-        int min_col = 8;
-        int max_col = -1;
+        int minCol = 8;
+        int maxCol = -1;
         for(int y = 0; y < 8; y++) {
             u8 row = fontTable[c][y];
             if(row != 0) {
                 for(int x = 0; x < 8; x++) {
                     if(row & (0x80 >> x)) {
-                        if(x < min_col) min_col = x;
-                        if(x > max_col) max_col = x;
+                        if(x < minCol) minCol = x;
+                        if(x > maxCol) maxCol = x;
                     }
                 }
             }
         }
 
-        if(max_col < 0) {
+        if(maxCol < 0 || c == ' ') {
             s_glyphWidth[c] = 0.0f;
-            s_glyphAdvance[c] = 4.0f;
+            s_glyphAdvance[c] = (c == ' ') ? 4.0f : 2.0f;
             continue;
         }
 
-        int activeW = max_col - min_col + 1;
-        s_glyphWidth[c] = (float)(activeW + 1);   // Ancho visible real + 1px de sombra horneada
-        s_glyphAdvance[c] = (float)(activeW + 1); // Tracking de 1px de separación entre glifos
+        int activeW = maxCol - minCol + 1;
 
-        // 1. Extraer máscara booleana del glifo (px en 0..activeW-1, py en 0..7)
-        bool isPixel[12][12] = { false };
+        // Pase 1: Escribir píxeles de sombra en (px + 1, py + 1)
         for(int row = 0; row < 8; row++) {
             u8 rowBits = fontTable[c][row];
             if(rowBits == 0) continue;
-            for(int col = min_col; col <= max_col; col++) {
+            for(int col = minCol; col <= maxCol; col++) {
                 if(rowBits & (0x80 >> col)) {
-                    int px = col - min_col;
-                    int py = row;
-                    if(px >= 0 && px < 12 && py >= 0 && py < 12) {
-                        isPixel[py][px] = true;
-                    }
+                    int px = cellX + 1 + (col - minCol);
+                    int py = cellY + 1 + row;
+                    temp[(py + 1) * 256 + (px + 1)] = shadowCol;
                 }
             }
         }
 
-        // 2. Pase de cobertura de bordes (Alpha Coverage Smoothing)
-        u8 glyphAlpha[16][16] = { 0 };
-        for(int py = 0; py <= 8; py++) {
-            for(int px = 0; px <= activeW; px++) {
-                if(px < 12 && py < 12 && isPixel[py][px]) {
-                    glyphAlpha[py][px] = 255;
-                } else {
-                    int cardNeighbors = 0;
-                    int diagNeighbors = 0;
-
-                    // Vecinos contiguos (cardinales)
-                    if(py > 0 && px < 12 && isPixel[py - 1][px]) cardNeighbors++;
-                    if(py < 11 && px < 12 && isPixel[py + 1][px]) cardNeighbors++;
-                    if(px > 0 && py < 12 && isPixel[py][px - 1]) cardNeighbors++;
-                    if(px < 11 && py < 12 && isPixel[py][px + 1]) cardNeighbors++;
-
-                    // Vecinos diagonales
-                    if(py > 0 && px > 0 && isPixel[py - 1][px - 1]) diagNeighbors++;
-                    if(py > 0 && px < 11 && isPixel[py - 1][px + 1]) diagNeighbors++;
-                    if(py < 11 && px > 0 && isPixel[py + 1][px - 1]) diagNeighbors++;
-                    if(py < 11 && px < 11 && isPixel[py + 1][px + 1]) diagNeighbors++;
-
-                    if(cardNeighbors >= 2) {
-                        glyphAlpha[py][px] = 140;
-                    } else if(diagNeighbors == 1 && cardNeighbors == 0) {
-                        glyphAlpha[py][px] = 75;
-                    }
+        // Pase 2: Escribir píxeles del glifo en (px, py) en blanco puro opaco (sobrescribe la sombra si coincide)
+        for(int row = 0; row < 8; row++) {
+            u8 rowBits = fontTable[c][row];
+            if(rowBits == 0) continue;
+            for(int col = minCol; col <= maxCol; col++) {
+                if(rowBits & (0x80 >> col)) {
+                    int px = cellX + 1 + (col - minCol);
+                    int py = cellY + 1 + row;
+                    temp[py * 256 + px] = 0xFFFFFFFF;
                 }
             }
         }
 
-        // 3. Proyectar sombra horneada 1px abajo-derecha multiplicando por el canal alfa de cobertura (alpha * 0.65f)
-        u8 shadowAlpha[16][16] = { 0 };
-        for(int py = 0; py <= 8; py++) {
-            for(int px = 0; px <= activeW; px++) {
-                if(glyphAlpha[py][px] > 0) {
-                    u8 sVal = (u8)(glyphAlpha[py][px] * 0.65f);
-                    int spx = px + 1;
-                    int spy = py + 1;
-                    if(spx < 16 && spy < 16) {
-                        if(sVal > shadowAlpha[spy][spx]) {
-                            shadowAlpha[spy][spx] = sVal;
-                        }
-                    }
-                }
-            }
-        }
-
-        // 4. Escribir al atlas en memoria lineal
-        for(int py = 0; py < 10; py++) {
-            for(int px = 0; px <= activeW + 1; px++) {
-                int dstX = cellX + px;
-                int dstY = cellY + py;
-                if(dstX < 256 && dstY < 256) {
-                    if(glyphAlpha[py][px] > 0) {
-                        temp[dstY * 256 + dstX] = uiColorRGBA(255, 255, 255, glyphAlpha[py][px]);
-                    } else if(shadowAlpha[py][px] > 0) {
-                        temp[dstY * 256 + dstX] = uiColorRGBA(0, 0, 0, shadowAlpha[py][px]);
-                    }
-                }
-            }
-        }
+        s_glyphWidth[c] = (float)(activeW + 1);   // Incluye la sombra de 1px
+        s_glyphAdvance[c] = (float)(activeW + 2); // Colchón de 1px limpio de separación entre letras
     }
 
     // El espacio en blanco ' ' no tiene sombra y avanza 4px
     s_glyphWidth[' '] = 0.0f;
     s_glyphAdvance[' '] = 4.0f;
-
-    // Métricas explícitas exactas para glifos anchos de 7px
-    s_glyphWidth['V'] = 7.0f; s_glyphAdvance['V'] = 8.0f;
-    s_glyphWidth['v'] = 7.0f; s_glyphAdvance['v'] = 8.0f;
-    s_glyphWidth['X'] = 7.0f; s_glyphAdvance['X'] = 8.0f;
-    s_glyphWidth['x'] = 7.0f; s_glyphAdvance['x'] = 8.0f;
-    s_glyphWidth['M'] = 7.0f; s_glyphAdvance['M'] = 8.0f;
-    s_glyphWidth['W'] = 7.0f; s_glyphAdvance['W'] = 8.0f;
-    s_glyphWidth['T'] = 7.0f; s_glyphAdvance['T'] = 8.0f;
 
     GSPGPU_FlushDataCache(temp, 256 * 256 * sizeof(u32));
     C3D_SyncDisplayTransfer(
@@ -407,7 +347,7 @@ void uiRenderInit() {
     linearFree(temp);
 
     GSPGPU_InvalidateDataCache(s_fontAtlasTex.data, s_fontAtlasTex.size);
-    C3D_TexSetFilter(&s_fontAtlasTex, GPU_LINEAR, GPU_LINEAR);
+    C3D_TexSetFilter(&s_fontAtlasTex, GPU_NEAREST, GPU_NEAREST);
     C3D_TexSetWrap(&s_fontAtlasTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     s_fontAtlasInit = true;
@@ -788,18 +728,25 @@ static inline u8 getNextGlyph(const char*& p) {
     return c;
 }
 
-static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, float scaleY, u32 color) {
-    float gw = (float)s_glyphWidth[c];
+static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scaleX, float scaleY, u32 color) {
+    float gw = s_glyphWidth[c];
     if(gw <= 0.0f) {
         return;
     }
-    float gh = 8.0f;
+
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
-    float u0 = (float)cellX / 256.0f;
-    float u1 = ((float)cellX + gw) / 256.0f;
-    float v0 = (float)cellY / 256.0f;
-    float v1 = ((float)cellY + gh) / 256.0f;
+    int gh = 9; // 8px de alto + 1px de sombra
+
+    float u0 = (float)(cellX + 1) / 256.0f;
+    float u1 = (float)(cellX + 1 + gw) / 256.0f;
+    float v0 = (float)(cellY + 1) / 256.0f;
+    float v1 = (float)(cellY + 1 + gh) / 256.0f;
+
+    float x0 = penX;
+    float x1 = penX + ((float)gw * scaleX);
+    float y0 = penY;
+    float y1 = penY + ((float)gh * scaleY);
 
     // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
@@ -813,8 +760,11 @@ static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, fl
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvColor(env0, color);
 
-    C3D_ImmDrawBegin(GPU_TRIANGLES);
-    emitUiQuad(x, y, x + (gw * scaleX), y + (gh * scaleY), u0, v0, u1, v1);
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(x0, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x1, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x0, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmDrawEnd();
 }
 
