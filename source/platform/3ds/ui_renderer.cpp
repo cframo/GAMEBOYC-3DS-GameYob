@@ -272,7 +272,7 @@ void uiRenderInit() {
     static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(fontTable[0xA1], invExc, 8);
     static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(fontTable[0xBF], invQst, 8);
 
-    // Generar atlas 256x256 con sombras horneadas a 1:1
+    // Generar atlas 256x256 con antialiasing por cobertura alfa y sombras horneadas
     for(int c = 0; c < 256; c++) {
         int cellCol = c & 0x0F;
         int cellRow = (c >> 4) & 0x0F;
@@ -303,8 +303,8 @@ void uiRenderInit() {
         s_glyphWidth[c] = (float)(activeW + 1);   // Ancho visible real + 1px de sombra horneada
         s_glyphAdvance[c] = (float)(activeW + 1); // Tracking de 1px de separación entre glifos
 
-        // Pase 1: Sombra horneada desplazada a (px + 1, py + 1) con RGBA(0, 0, 0, 180)
-        u32 shadowColor = uiColorRGBA(0, 0, 0, 180);
+        // 1. Extraer máscara booleana del glifo (px en 0..activeW-1, py en 0..7)
+        bool isPixel[12][12] = { false };
         for(int row = 0; row < 8; row++) {
             u8 rowBits = fontTable[c][row];
             if(rowBits == 0) continue;
@@ -312,20 +312,72 @@ void uiRenderInit() {
                 if(rowBits & (0x80 >> col)) {
                     int px = col - min_col;
                     int py = row;
-                    temp[(cellY + py + 1) * 256 + (cellX + px + 1)] = shadowColor;
+                    if(px >= 0 && px < 12 && py >= 0 && py < 12) {
+                        isPixel[py][px] = true;
+                    }
                 }
             }
         }
 
-        // Pase 2: Glifo principal en blanco plano (255, 255, 255, 255) en (px, py)
-        for(int row = 0; row < 8; row++) {
-            u8 rowBits = fontTable[c][row];
-            if(rowBits == 0) continue;
-            for(int col = min_col; col <= max_col; col++) {
-                if(rowBits & (0x80 >> col)) {
-                    int px = col - min_col;
-                    int py = row;
-                    temp[(cellY + py) * 256 + (cellX + px)] = 0xFFFFFFFF;
+        // 2. Pase de cobertura de bordes (Alpha Coverage Smoothing)
+        u8 glyphAlpha[16][16] = { 0 };
+        for(int py = 0; py <= 8; py++) {
+            for(int px = 0; px <= activeW; px++) {
+                if(px < 12 && py < 12 && isPixel[py][px]) {
+                    glyphAlpha[py][px] = 255;
+                } else {
+                    int cardNeighbors = 0;
+                    int diagNeighbors = 0;
+
+                    // Vecinos contiguos (cardinales)
+                    if(py > 0 && px < 12 && isPixel[py - 1][px]) cardNeighbors++;
+                    if(py < 11 && px < 12 && isPixel[py + 1][px]) cardNeighbors++;
+                    if(px > 0 && py < 12 && isPixel[py][px - 1]) cardNeighbors++;
+                    if(px < 11 && py < 12 && isPixel[py][px + 1]) cardNeighbors++;
+
+                    // Vecinos diagonales
+                    if(py > 0 && px > 0 && isPixel[py - 1][px - 1]) diagNeighbors++;
+                    if(py > 0 && px < 11 && isPixel[py - 1][px + 1]) diagNeighbors++;
+                    if(py < 11 && px > 0 && isPixel[py + 1][px - 1]) diagNeighbors++;
+                    if(py < 11 && px < 11 && isPixel[py + 1][px + 1]) diagNeighbors++;
+
+                    if(cardNeighbors >= 2) {
+                        glyphAlpha[py][px] = 140;
+                    } else if(diagNeighbors == 1 && cardNeighbors == 0) {
+                        glyphAlpha[py][px] = 75;
+                    }
+                }
+            }
+        }
+
+        // 3. Proyectar sombra horneada 1px abajo-derecha multiplicando por el canal alfa de cobertura (alpha * 0.65f)
+        u8 shadowAlpha[16][16] = { 0 };
+        for(int py = 0; py <= 8; py++) {
+            for(int px = 0; px <= activeW; px++) {
+                if(glyphAlpha[py][px] > 0) {
+                    u8 sVal = (u8)(glyphAlpha[py][px] * 0.65f);
+                    int spx = px + 1;
+                    int spy = py + 1;
+                    if(spx < 16 && spy < 16) {
+                        if(sVal > shadowAlpha[spy][spx]) {
+                            shadowAlpha[spy][spx] = sVal;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Escribir al atlas en memoria lineal
+        for(int py = 0; py < 10; py++) {
+            for(int px = 0; px <= activeW + 1; px++) {
+                int dstX = cellX + px;
+                int dstY = cellY + py;
+                if(dstX < 256 && dstY < 256) {
+                    if(glyphAlpha[py][px] > 0) {
+                        temp[dstY * 256 + dstX] = uiColorRGBA(255, 255, 255, glyphAlpha[py][px]);
+                    } else if(shadowAlpha[py][px] > 0) {
+                        temp[dstY * 256 + dstX] = uiColorRGBA(0, 0, 0, shadowAlpha[py][px]);
+                    }
                 }
             }
         }
@@ -355,7 +407,7 @@ void uiRenderInit() {
     linearFree(temp);
 
     GSPGPU_InvalidateDataCache(s_fontAtlasTex.data, s_fontAtlasTex.size);
-    C3D_TexSetFilter(&s_fontAtlasTex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetFilter(&s_fontAtlasTex, GPU_LINEAR, GPU_LINEAR);
     C3D_TexSetWrap(&s_fontAtlasTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     s_fontAtlasInit = true;
