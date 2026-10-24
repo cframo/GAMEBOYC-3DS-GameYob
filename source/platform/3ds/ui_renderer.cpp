@@ -236,6 +236,19 @@ void uiRenderInit() {
     static const u8 font_dot[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(fontTable['.'], font_dot, 8);
     static const u8 font_col[8] = {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(fontTable[':'], font_col, 8);
 
+    // Glifos simétricos 8x8 optimizados (bitmasks explícitos para evitar deformaciones)
+    static const u8 font_V[8] = { 0x63, 0x63, 0x63, 0x36, 0x36, 0x1C, 0x08, 0x00 }; memcpy(fontTable['V'], font_V, 8);
+    static const u8 font_v[8] = { 0x00, 0x00, 0x63, 0x63, 0x36, 0x1C, 0x08, 0x00 }; memcpy(fontTable['v'], font_v, 8);
+    static const u8 font_X[8] = { 0x63, 0x63, 0x36, 0x1C, 0x1C, 0x36, 0x63, 0x00 }; memcpy(fontTable['X'], font_X, 8);
+    static const u8 font_x[8] = { 0x00, 0x00, 0x63, 0x36, 0x1C, 0x36, 0x63, 0x00 }; memcpy(fontTable['x'], font_x, 8);
+    static const u8 font_Y[8] = { 0x63, 0x63, 0x36, 0x1C, 0x08, 0x08, 0x08, 0x00 }; memcpy(fontTable['Y'], font_Y, 8);
+    static const u8 font_M[8] = { 0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00 }; memcpy(fontTable['M'], font_M, 8);
+    static const u8 font_W[8] = { 0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00 }; memcpy(fontTable['W'], font_W, 8);
+    static const u8 font_T[8] = { 0x7F, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00 }; memcpy(fontTable['T'], font_T, 8);
+    static const u8 font_S[8] = { 0x3E, 0x63, 0x60, 0x3E, 0x03, 0x63, 0x3E, 0x00 }; memcpy(fontTable['S'], font_S, 8);
+    static const u8 font_E[8] = { 0x7F, 0x60, 0x60, 0x7E, 0x60, 0x60, 0x7F, 0x00 }; memcpy(fontTable['E'], font_E, 8);
+    static const u8 font_R[8] = { 0x7E, 0x63, 0x63, 0x7E, 0x6C, 0x66, 0x63, 0x00 }; memcpy(fontTable['R'], font_R, 8);
+
     // Acentos españoles minúsculas (tilde aguda en filas 0..1 + cuerpo base)
     memcpy(fontTable[0xE1], font8x8_basic['a'], 8); fontTable[0xE1][0] = 0x0C; fontTable[0xE1][1] = 0x18;
     memcpy(fontTable[0xE9], font8x8_basic['e'], 8); fontTable[0xE9][0] = 0x0C; fontTable[0xE9][1] = 0x18;
@@ -246,7 +259,7 @@ void uiRenderInit() {
 
     // Acentos españoles mayúsculas
     memcpy(fontTable[0xC1], font8x8_basic['A'], 8);
-    memcpy(fontTable[0xC9], font8x8_basic['E'], 8);
+    memcpy(fontTable[0xC9], fontTable['E'], 8);
     memcpy(fontTable[0xCD], font8x8_basic['I'], 8);
     memcpy(fontTable[0xD3], font8x8_basic['O'], 8);
     memcpy(fontTable[0xDA], font8x8_basic['U'], 8);
@@ -262,7 +275,7 @@ void uiRenderInit() {
     static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(fontTable[0xA1], invExc, 8);
     static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(fontTable[0xBF], invQst, 8);
 
-    // Generar atlas 256x256 con sombras horneadas a 1:1
+    // Generar atlas 256x256 con margen de seguridad PAD = 2 y sombras horneadas a 1:1
     for(int c = 0; c < 256; c++) {
         int cellCol = c & 0x0F;
         int cellRow = (c >> 4) & 0x0F;
@@ -293,29 +306,29 @@ void uiRenderInit() {
         s_glyphWidth[c] = (float)(activeW + 1);   // Ancho visible real + 1px de sombra horneada
         s_glyphAdvance[c] = (float)(activeW + 1); // Tracking de 1px de separación entre glifos
 
-        // Pase 1: Sombra horneada desplazada a (px + 1, py + 1) con RGBA(0, 0, 0, 180)
+        // Pase 1: Sombra horneada desplazada por PAD = 2 en X e Y, más (+1, +1) para la sombra
         u32 shadowColor = uiColorRGBA(0, 0, 0, 180);
         for(int row = 0; row < 8; row++) {
             u8 rowBits = fontTable[c][row];
             if(rowBits == 0) continue;
             for(int col = min_col; col <= max_col; col++) {
                 if(rowBits & (0x80 >> col)) {
-                    int px = col - min_col;
-                    int py = row;
-                    temp[(cellY + py + 1) * 256 + (cellX + px + 1)] = shadowColor;
+                    int gx = (col - min_col) + 2;
+                    int gy = row + 2;
+                    temp[(cellY + gy + 1) * 256 + (cellX + gx + 1)] = shadowColor;
                 }
             }
         }
 
-        // Pase 2: Glifo principal en blanco plano (255, 255, 255, 255) en (px, py)
+        // Pase 2: Glifo principal en blanco plano (255, 255, 255, 255) desplazado por PAD = 2
         for(int row = 0; row < 8; row++) {
             u8 rowBits = fontTable[c][row];
             if(rowBits == 0) continue;
             for(int col = min_col; col <= max_col; col++) {
                 if(rowBits & (0x80 >> col)) {
-                    int px = col - min_col;
-                    int py = row;
-                    temp[(cellY + py) * 256 + (cellX + px)] = 0xFFFFFFFF;
+                    int gx = (col - min_col) + 2;
+                    int gy = row + 2;
+                    temp[(cellY + gy) * 256 + (cellX + gx)] = 0xFFFFFFFF;
                 }
             }
         }
@@ -722,13 +735,26 @@ static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, fl
     if(gw <= 0.0f) {
         return;
     }
-    float gh = 9.0f;
+    int activeW = (int)gw - 1;
+    if(activeW < 1) activeW = 1;
+
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
-    float u0 = (float)cellX / 256.0f;
-    float u1 = ((float)cellX + gw) / 256.0f;
-    float v0 = (float)cellY / 256.0f;
-    float v1 = ((float)cellY + gh) / 256.0f;
+
+    int quadTexX0 = cellX + 1;
+    int quadTexX1 = cellX + 2 + activeW + 2;
+    int quadTexY0 = cellY + 1;
+    int quadTexY1 = cellY + 2 + 8 + 2;
+
+    float u0 = (float)quadTexX0 / 256.0f;
+    float u1 = (float)quadTexX1 / 256.0f;
+    float v0 = (float)(256 - quadTexY0) / 256.0f;
+    float v1 = (float)(256 - quadTexY1) / 256.0f;
+
+    float x0 = x - scaleX;
+    float x1 = x0 + (float)(quadTexX1 - quadTexX0) * scaleX;
+    float y0 = y - scaleY;
+    float y1 = y0 + (float)(quadTexY1 - quadTexY0) * scaleY;
 
     // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
@@ -743,7 +769,7 @@ static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, fl
     C3D_TexEnvColor(env0, color);
 
     C3D_ImmDrawBegin(GPU_TRIANGLES);
-    emitUiQuad(x, y, x + (gw * scaleX), y + (gh * scaleY), u0, v0, u1, v1);
+    emitUiQuad(x0, y0, x1, y1, u0, v0, u1, v1);
     C3D_ImmDrawEnd();
 }
 
@@ -1174,7 +1200,7 @@ static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
 }
 
 static bool s_show3DArt = true;
-static bool s_showSynopsis = false;
+static bool s_showSynopsis = true;
 static int s_previewSlot = 0;
 
 void uiToggle3DArt() {
@@ -1805,7 +1831,7 @@ void uiDrawConfigModal() {
                 if(name.length() > 28) name = name.substr(0, 27) + "~";
                 char line[36];
                 snprintf(line, sizeof(line), "[%c] %s", enabled ? 'X' : ' ', name.c_str());
-                uiDrawText(18.0f, rowY + 8.0f, line, enabled ? UI_COLOR_GREEN : (selected ? colWhite : colGray));
+                uiDrawText(16.0f, rowY + 8.0f, line, enabled ? UI_COLOR_GREEN : (selected ? colWhite : colGray));
             }
 
             if(s_cheatScroll > 0) {
@@ -1892,7 +1918,7 @@ void uiDrawConfigModal() {
                 uiDrawRectOutline(9.0f, rowY, 302.0f, 24.0f, 1.0f, colRowBorder);
             }
 
-            uiDrawText(18.0f, rowY + 8.0f, labels[r], selected ? colWhite : colGray);
+            uiDrawText(16.0f, rowY + 8.0f, labels[r], selected ? colWhite : colGray);
 
             u32 valCol = UI_COLOR_CYAN;
             if(s_currentTab == UI_TAB_GAME) {
@@ -1902,15 +1928,15 @@ void uiDrawConfigModal() {
                 else if(r == 4) valCol = mgrStateExists(stateNum) ? UI_COLOR_PURPLE : UI_COLOR_DARKGRAY;
                 else if(!mgrStateExists(stateNum) && (r == 3)) valCol = UI_COLOR_DARKGRAY;
             }
-            uiDrawTextRight(300.0f, rowY + 8.0f, values[r], valCol);
+            uiDrawTextRight(304.0f, rowY + 8.0f, values[r], valCol);
         }
     }
 
-    // 5. Mensaje de estado / Ayuda en parte inferior del contenedor
+    // 5. Mensaje de estado / Ayuda en parte inferior del contenedor centrado
     if(s_modalMessage[0] != '\0' && (osGetTime() - s_modalMessageTime < 1800)) {
-        uiDrawText(18.0f, 192.0f, s_modalMessage, s_modalMessageColor);
+        uiDrawTextCentered(160.0f, 192.0f, s_modalMessage, s_modalMessageColor);
     } else {
-        uiDrawText(18.0f, 192.0f, "L/R:Tab  Pad:Navigate  A/Touch:Select  B:Resume", UI_COLOR_DARKGRAY);
+        uiDrawTextCentered(160.0f, 192.0f, "Cruceta/Toque: Cambiar    B: Volver", UI_COLOR_DARKGRAY);
     }
 
     // 6. Dock inferior (y: 216..236)
@@ -2392,20 +2418,25 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 }
 
 void uiDrawTopScreenHub(float eyeOffset) {
-    const u32 colBg = uiColorRGBA(13, 17, 24, 255);
-    const u32 colAmber = UI_COLOR_AMBER;
-    const u32 colPanelBlue = uiColorRGBA(20, 28, 44, 255);
-
-    const u32 colYellow = UI_COLOR_YELLOW;
+    const u32 colSlateBg = uiColorRGBA(22, 28, 40, 255);      // Azul Pizarra Profundo
+    const u32 colBarBg = uiColorRGBA(13, 16, 23, 255);        // Rectángulo sólido oscuro de barras
+    const u32 colBarLine = uiColorRGBA(38, 48, 66, 255);      // Línea sutil de barras
+    const u32 colCardBg = uiColorRGBA(15, 20, 30, 255);       // Relleno oscuro de tarjeta
+    const u32 colCardBorder = uiColorRGBA(38, 50, 70, 255);   // Borde fino azul acero
+    const u32 colGold = uiColorRGBA(224, 176, 80, 255);       // Dorado suave
+    const u32 colDivLine = uiColorRGBA(30, 40, 56, 255);      // Línea divisoria tenue
     const u32 colWhite = UI_COLOR_WHITE;
+    const u32 colTextBright = uiColorRGBA(245, 248, 255, 255);
+    const u32 colTextSyn = uiColorRGBA(215, 222, 235, 255);
     const u32 colGray = UI_COLOR_GRAY;
     const u32 colCyan = UI_COLOR_CYAN;
+    const u32 colYellow = UI_COLOR_YELLOW;
     const u32 colGreen = UI_COLOR_GREEN;
 
-    // 1. Fondo Azul Obsidiana muy oscuro (400x240)
-    uiDrawRect(0.0f, 0.0f, 400.0f, 240.0f, colBg);
+    // 1. Fondo base Azul Pizarra Profundo (400x240)
+    uiDrawRect(0.0f, 0.0f, 400.0f, 240.0f, colSlateBg);
 
-    // Obtener selección actual desde FileChooser (solo lectura, sin llamadas a fetch ni a updateBoxart)
+    // Obtener selección actual desde FileChooser (solo lectura)
     FileChooser* chooser = getActiveFileChooser();
     bool isDir = false;
     std::string selectedFile = "";
@@ -2457,47 +2488,39 @@ void uiDrawTopScreenHub(float eyeOffset) {
     snprintf(batPctStr, sizeof(batPctStr), "%d%%", batPct);
     u32 batCol = (batLevel <= 1) ? uiColorRGBA(255, 60, 60, 255) : (batLevel <= 2 ? colYellow : colGreen);
 
-    // 2. Marco exterior doble dorado (x: 10..390, y: 8..232) con barra superior integrada
-    uiDrawDropShadow(10.0f, 8.0f, 380.0f, 224.0f, 4.0f, 90);
-    // Borde exterior de 2px en dorado
-    uiDrawRectOutline(10.0f, 8.0f, 380.0f, 224.0f, 2.0f, colAmber);
-    // Separación oscura de 2px
-    uiDrawRect(12.0f, 10.0f, 376.0f, 220.0f, uiColorRGBA(10, 14, 20, 255));
-    // Borde interior de 1px en dorado suave
-    uiDrawRectOutline(14.0f, 12.0f, 372.0f, 216.0f, 1.0f, uiColorRGBA(150, 118, 45, 255));
-    // Relleno interior en azul noche profundo
-    uiDrawRect(15.0f, 13.0f, 370.0f, 214.0f, colPanelBlue);
+    // 2. Barra Superior Edge-to-Edge (x: 0..400, y: 0..26)
+    uiDrawRect(0.0f, 0.0f, 400.0f, 26.0f, colBarBg);
+    uiDrawRect(0.0f, 26.0f, 400.0f, 1.0f, colBarLine);
 
-    // Barra superior (y=14): "GAMEYOB 3DS" (x=18) | Hora (rightX=322) | Batería (rightX=360) | Icono batería (x=364..382)
-    uiDrawText(18.0f, 14.0f, "GAMEYOB 3DS", colAmber);
-    uiDrawTextRight(322.0f, 14.0f, timeStr, colWhite);
-    uiDrawTextRight(360.0f, 14.0f, batPctStr, batCol);
-    uiDrawRectOutline(364.0f, 14.0f, 18.0f, 9.0f, 1.0f, colWhite);
-    uiDrawRect(382.0f, 16.0f, 2.0f, 5.0f, colWhite);
+    // Izquierda (x=14, y=9): Nombre limpio de la ROM recortado a 270px
+    uiDrawTextClipped(14.0f, 9.0f, 270.0f, fullHeader.c_str(), colTextBright);
+
+    // Derecha (y=9): Hora en x=305, Icono batería en x=344..362, Porcentaje en x=366
+    uiDrawText(305.0f, 9.0f, timeStr, colWhite);
+    uiDrawRectOutline(344.0f, 9.0f, 18.0f, 9.0f, 1.0f, colWhite);
+    uiDrawRect(362.0f, 11.0f, 2.0f, 5.0f, colWhite);
     float fillW = ((float)batLevel / 5.0f) * 14.0f;
     if(fillW > 0.0f) {
-        uiDrawRect(366.0f, 16.0f, fillW, 5.0f, batCol);
+        uiDrawRect(346.0f, 11.0f, fillW, 5.0f, batCol);
     }
+    uiDrawText(366.0f, 9.0f, batPctStr, batCol);
 
-    // Línea 2 de barra superior (y=27): Título completo recortado con uiDrawTextClipped
-    uiDrawTextClipped(18.0f, 27.0f, 360.0f, fullHeader.c_str(), colWhite);
-
-    // Línea divisoria dorada horizontal en y=40
-    uiDrawRect(14.0f, 40.0f, 372.0f, 1.0f, colAmber);
-
-    // 3. Cuadrante Izquierdo (x: 22..146, y: 48..196)
-    uiDrawDropShadow(22.0f, 48.0f, 124.0f, 152.0f, 2.0f, 70);
-    uiDrawRoundedRect(22.0f, 48.0f, 124.0f, 152.0f, 2.0f, uiColorRGBA(12, 18, 30, 255), uiColorRGBA(45, 65, 95, 255), 1.0f);
+    // 3. Área Izquierda - Showcase Limpio (x: 20..176, y: 36..204)
+    float boxW = 124.0f;
+    float boxH = 124.0f;
+    float boxX = 98.0f - (boxW * 0.5f) + (eyeOffset * 0.5f);
+    float boxY = 120.0f - (boxH * 0.5f);
 
     if(isDir) {
-        uiDrawText(44.0f, 85.0f, "[CARPETA]", colYellow);
-        uiDrawText(28.0f, 110.0f, "Subdirectorio SDMC", colGray);
-        uiDrawText(32.0f, 135.0f, "A: Abrir Carpeta", colWhite);
+        uiDrawDropShadow(boxX, boxY, boxW, boxH, 4.0f, 80);
+        uiDrawRoundedRect(boxX, boxY, boxW, boxH, 4.0f, colCardBg, colCardBorder, 1.0f);
+        uiDrawFolderIcon(boxX + 54.0f, boxY + 44.0f);
+        uiDrawTextCentered(boxX + 62.0f, boxY + 70.0f, "Carpeta SDMC", colWhite);
     } else if(!selectedFile.empty()) {
-        uiDrawDropShadow(84.0f - 45.0f + eyeOffset * 0.3f, 160.0f, 90.0f, 10.0f, 3.0f, 130);
+        uiDrawDropShadow(boxX, boxY, boxW, boxH, 5.0f, 120);
 
         if(s_show3DArt) {
-            uiDrawBoxart3D(84.0f, 108.0f, 96.0f, gfxGetProjectionTop(), eyeOffset);
+            uiDrawBoxart3D(98.0f, 120.0f, 106.0f, gfxGetProjectionTop(), eyeOffset);
         } else {
             if(s_boxartLoaded && s_boxartTexAllocated) {
                 C3D_TexBind(0, &s_boxartTex);
@@ -2511,173 +2534,167 @@ void uiDrawTopScreenHub(float eyeOffset) {
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
                 C3D_ImmDrawBegin(GPU_TRIANGLES);
-                emitUiQuad(26.0f + eyeOffset * 0.5f, 50.0f, 142.0f + eyeOffset * 0.5f, 166.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                emitUiQuad(boxX, boxY, boxX + boxW, boxY + boxH, 0.0f, 0.0f, 1.0f, 1.0f);
                 C3D_ImmDrawEnd();
 
-                uiDrawRectOutline(25.0f + eyeOffset * 0.5f, 49.0f, 118.0f, 118.0f, 1.0f, colAmber);
+                uiDrawRectOutline(boxX, boxY, boxW, boxH, 1.0f, colCardBorder);
             } else {
                 bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
                 u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
                 u32 colCartBorder = isGBC ? uiColorRGBA(85, 95, 120, 255) : uiColorRGBA(190, 190, 190, 255);
 
-                uiDrawRect(39.0f + eyeOffset * 0.5f, 55.0f, 90.0f, 106.0f, colCart);
-                uiDrawRectOutline(39.0f + eyeOffset * 0.5f, 55.0f, 90.0f, 106.0f, 1.0f, colCartBorder);
-                uiDrawRect(47.0f + eyeOffset * 0.5f, 74.0f, 74.0f, 72.0f, uiColorRGBA(24, 34, 52, 255));
-                uiDrawRectOutline(47.0f + eyeOffset * 0.5f, 74.0f, 74.0f, 72.0f, 1.0f, colAmber);
+                float cartW = 90.0f;
+                float cartH = 106.0f;
+                float cartX = 98.0f - (cartW * 0.5f) + (eyeOffset * 0.5f);
+                float cartY = 120.0f - (cartH * 0.5f);
 
-                uiDrawText(52.0f + eyeOffset * 0.5f, 84.0f, "GAME BOY", colWhite);
+                uiDrawDropShadow(cartX, cartY, cartW, cartH, 4.0f, 100);
+                uiDrawRect(cartX, cartY, cartW, cartH, colCart);
+                uiDrawRectOutline(cartX, cartY, cartW, cartH, 1.0f, colCartBorder);
+                uiDrawRect(cartX + 8.0f, cartY + 18.0f, 74.0f, 72.0f, uiColorRGBA(24, 34, 52, 255));
+                uiDrawRectOutline(cartX + 8.0f, cartY + 18.0f, 74.0f, 72.0f, 1.0f, colGold);
+
+                uiDrawTextCentered(cartX + (cartW * 0.5f), cartY + 34.0f, "GAME BOY", colWhite);
                 if(isGBC) {
-                    uiDrawText(58.0f + eyeOffset * 0.5f, 102.0f, "COLOR", colCyan);
+                    uiDrawTextCentered(cartX + (cartW * 0.5f), cartY + 52.0f, "COLOR", colCyan);
                 }
             }
         }
-
-        std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
-        uiDrawTextClipped(26.0f + eyeOffset * 0.3f, 170.0f, 116.0f, pubStr.c_str(), colWhite);
-
-        char yrGen[40];
-        if(s_metaLoaded && s_currentMeta.year > 0) {
-            snprintf(yrGen, sizeof(yrGen), "%d  %s", s_currentMeta.year, s_currentMeta.genre.c_str());
-        } else {
-            snprintf(yrGen, sizeof(yrGen), "Clasico GameBoy");
-        }
-        uiDrawTextClipped(26.0f + eyeOffset * 0.3f, 184.0f, 116.0f, yrGen, colAmber);
     } else {
-        uiDrawText(44.0f, 105.0f, "Sin seleccion", colGray);
+        uiDrawTextCentered(98.0f, 115.0f, "Sin seleccion", colGray);
     }
 
-    // 4. Cuadrante Derecho (x: 158..380, y: 48..204)
-    uiDrawDropShadow(158.0f, 48.0f, 222.0f, 156.0f, 2.0f, 70);
-    uiDrawRoundedRect(158.0f, 48.0f, 222.0f, 156.0f, 2.0f, uiColorRGBA(16, 22, 34, 255), uiColorRGBA(45, 65, 95, 255), 1.0f);
+    // 4. Área Derecha - Tarjeta Oscura Moderna (x: 188..388, y: 36..204)
+    float cardX = 188.0f;
+    float cardY = 36.0f;
+    float cardW = 200.0f;
+    float cardH = 168.0f;
 
-    if(!s_showSynopsis) {
-        // MODO FICHA DE COMPATIBILIDAD
-        uiDrawTextClipped(166.0f, 52.0f, 212.0f, "FICHA DE COMPATIBILIDAD", colAmber);
-        uiDrawRect(164.0f, 66.0f, 212.0f, 1.0f, colAmber);
+    uiDrawDropShadow(cardX, cardY, cardW, cardH, 3.0f, 90);
+    uiDrawRoundedRect(cardX, cardY, cardW, cardH, 3.0f, colCardBg, colCardBorder, 1.0f);
 
+    // Título en x=200, y=45
+    const char* cardTitle = s_showSynopsis ? "SINOPSIS Y DATOS" : "FICHA DE COMPATIBILIDAD";
+    uiDrawText(200.0f, 45.0f, cardTitle, colGold);
+    // Línea divisoria en y=59 (x: 200..376)
+    uiDrawRect(200.0f, 59.0f, 176.0f, 1.0f, colCardBorder);
+
+    if(s_showSynopsis) {
+        // MODO SINOPSIS Y DATOS (por defecto)
+        if(!selectedFile.empty() && !isDir) {
+            // y=67: "Ano: %d | Genero: %s"
+            char l1[48];
+            if(s_metaLoaded && s_currentMeta.year > 0) {
+                snprintf(l1, sizeof(l1), "Ano: %d | Genero: %s", s_currentMeta.year, s_currentMeta.genre.c_str());
+            } else {
+                snprintf(l1, sizeof(l1), "Genero: %s", s_metaLoaded ? s_currentMeta.genre.c_str() : "Clasico Game Boy");
+            }
+            uiDrawTextClipped(200.0f, 67.0f, 176.0f, l1, colWhite);
+
+            // y=82: "Desarrollador: %s"
+            std::string dev = s_metaLoaded && !s_currentMeta.developer.empty() ? s_currentMeta.developer : (s_metaLoaded && !s_currentMeta.publisher.empty() ? s_currentMeta.publisher : "Nintendo");
+            std::string devLine = "Desarrollador: " + dev;
+            uiDrawTextClipped(200.0f, 82.0f, 176.0f, devLine.c_str(), colCyan);
+
+            // y=97: "Guardado: %s"
+            std::string savStr = "Guardado: ";
+            if(s_metaLoaded) {
+                if(s_currentMeta.ramSizeKB > 0) {
+                    savStr += "SRAM " + std::to_string(s_currentMeta.ramSizeKB) + " KB";
+                    if(s_currentMeta.hasBattery) savStr += " Activo";
+                } else if(s_currentMeta.hasBattery) {
+                    savStr += "Bateria (Sin RAM)";
+                } else {
+                    savStr += "Sin bateria";
+                }
+            } else {
+                savStr += "SRAM / Flash";
+            }
+            uiDrawTextClipped(200.0f, 97.0f, 176.0f, savStr.c_str(), colWhite);
+
+            // Línea divisoria tenue en y=111
+            uiDrawRect(200.0f, 111.0f, 176.0f, 1.0f, colDivLine);
+
+            // y=119..185: Sinopsis envuelta limpiamente (máx 4 líneas, espaciado 15px)
+            std::string syn = s_metaLoaded && !s_currentMeta.synopsis.empty() ? s_currentMeta.synopsis : "Titulo clasico de Game Boy totalmente compatible con el nucleo GameYob.";
+            std::vector<std::string> synLines = wrapSynopsisText(syn, 28);
+            float sy = 119.0f;
+            for(size_t i = 0; i < synLines.size() && i < 4; i++) {
+                uiDrawTextClipped(200.0f, sy, 176.0f, synLines[i].c_str(), colTextSyn);
+                sy += 15.0f;
+            }
+        } else {
+            uiDrawText(200.0f, 80.0f, "Directorio SDMC", colWhite);
+            uiDrawText(200.0f, 100.0f, "Seleccione un archivo", colCyan);
+            uiDrawText(200.0f, 120.0f, "para ver sus detalles.", colGray);
+        }
+    } else {
+        // MODO FICHA DE COMPATIBILIDAD (al pulsar [Y])
         if(!selectedFile.empty() && !isDir) {
             bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
             bool isSGB = s_metaLoaded ? s_currentMeta.isSGB : false;
 
-            // Línea 1: Modo Nativo (y=74)
-            uiDrawText(166.0f, 74.0f, "• Modo Nativo: ", colGray);
-            float wL1 = uiGetTextWidth("• Modo Nativo: ", 1.0f);
-            uiDrawTextClipped(166.0f + wL1, 74.0f, 212.0f - wL1, isGBC ? "Game Boy Color (CGB)" : (isSGB ? "Super GB (SGB)" : "Game Boy (DMG)"), colWhite);
+            // Línea 1 (y=67): Modo Nativo
+            uiDrawText(200.0f, 67.0f, "• Modo: ", colGray);
+            float wL1 = uiGetTextWidth("• Modo: ", 1.0f);
+            uiDrawTextClipped(200.0f + wL1, 67.0f, 176.0f - wL1, isGBC ? "Color (CGB)" : (isSGB ? "Super GB (SGB)" : "Game Boy (DMG)"), colWhite);
 
-            // Línea 2: Mapper (y=92)
-            uiDrawText(166.0f, 92.0f, "• Mapper: ", colGray);
+            // Línea 2 (y=84): Mapper
+            uiDrawText(200.0f, 84.0f, "• Mapper: ", colGray);
             float wL2 = uiGetTextWidth("• Mapper: ", 1.0f);
             std::string mapStr = (s_metaLoaded && !s_currentMeta.mbcName.empty()) ? s_currentMeta.mbcName : "MBC Auto";
             if(s_metaLoaded && s_currentMeta.mbcName.find("MBC3") != std::string::npos) mapStr += " (RTC Activo)";
-            uiDrawTextClipped(166.0f + wL2, 92.0f, 212.0f - wL2, mapStr.c_str(), colCyan);
+            uiDrawTextClipped(200.0f + wL2, 84.0f, 176.0f - wL2, mapStr.c_str(), colCyan);
 
-            // Línea 3: Guardado (y=110)
-            uiDrawText(166.0f, 110.0f, "• Guardado: ", colGray);
+            // Línea 3 (y=101): Guardado
+            uiDrawText(200.0f, 101.0f, "• Guardado: ", colGray);
             float wL3 = uiGetTextWidth("• Guardado: ", 1.0f);
-            std::string savStr = "";
-            if(s_metaLoaded) {
-                if(s_currentMeta.ramSizeKB > 0) {
-                    savStr = "SRAM " + std::to_string(s_currentMeta.ramSizeKB) + " KB";
-                    if(s_currentMeta.hasBattery) savStr += " + Bateria";
-                } else if(s_currentMeta.hasBattery) {
-                    savStr = "Bateria (Sin RAM)";
-                } else {
-                    savStr = "Sin guardado";
-                }
-            } else {
-                savStr = "SRAM / Flash";
-            }
-            uiDrawTextClipped(166.0f + wL3, 110.0f, 212.0f - wL3, savStr.c_str(), colWhite);
+            std::string savStr = (s_metaLoaded && s_currentMeta.ramSizeKB > 0) ? ("SRAM " + std::to_string(s_currentMeta.ramSizeKB) + " KB") : "SRAM / Flash";
+            uiDrawTextClipped(200.0f + wL3, 101.0f, 176.0f - wL3, savStr.c_str(), colWhite);
 
-            // Línea 4: Tamaño ROM (y=128)
-            uiDrawText(166.0f, 128.0f, "• Tamano ROM: ", colGray);
-            float wL4 = uiGetTextWidth("• Tamano ROM: ", 1.0f);
-            std::string romSzStr = "";
-            if(s_metaLoaded && s_currentMeta.romSizeKB > 0) {
-                int banks = s_currentMeta.romSizeKB / 16;
-                romSzStr = std::to_string(s_currentMeta.romSizeKB) + " KB (" + std::to_string(banks) + " bancos)";
-            } else {
-                romSzStr = "Estandar";
-            }
-            uiDrawTextClipped(166.0f + wL4, 128.0f, 212.0f - wL4, romSzStr.c_str(), colCyan);
+            // Línea 4 (y=118): Tamaño ROM
+            uiDrawText(200.0f, 118.0f, "• ROM: ", colGray);
+            float wL4 = uiGetTextWidth("• ROM: ", 1.0f);
+            std::string romSzStr = (s_metaLoaded && s_currentMeta.romSizeKB > 0) ? (std::to_string(s_currentMeta.romSizeKB) + " KB") : "Estandar";
+            uiDrawTextClipped(200.0f + wL4, 118.0f, 176.0f - wL4, romSzStr.c_str(), colCyan);
 
-            // Línea 5: Audio (y=146)
-            uiDrawText(166.0f, 146.0f, "• Audio: ", colGray);
+            // Línea 5 (y=135): Audio
+            uiDrawText(200.0f, 135.0f, "• Audio: ", colGray);
             float wL5 = uiGetTextWidth("• Audio: ", 1.0f);
-            uiDrawTextClipped(166.0f + wL5, 146.0f, 212.0f - wL5, "Anillo Dual SPSC 32,728 Hz", colWhite);
+            uiDrawTextClipped(200.0f + wL5, 135.0f, 176.0f - wL5, "Dual SPSC 32,728 Hz", colWhite);
 
-            // Línea 6: Motor (y=164)
-            uiDrawText(166.0f, 164.0f, "• Motor: ", colGray);
+            // Línea 6 (y=152): Motor
+            uiDrawText(200.0f, 152.0f, "• Motor: ", colGray);
             float wL6 = uiGetTextWidth("• Motor: ", 1.0f);
-            uiDrawTextClipped(166.0f + wL6, 164.0f, 212.0f - wL6, "ARM11 JIT 60 FPS", colGray);
+            uiDrawTextClipped(200.0f + wL6, 152.0f, 176.0f - wL6, "ARM11 JIT 60 FPS", colGray);
 
-            // Al pie de la tarjeta: Última partida (y=184)
-            std::string saveInfo = "Ultima partida: ";
+            // Al pie (y=180): Última partida
+            std::string saveInfo = "Partida: ";
             if(s_metaLoaded && s_currentMeta.hasSave) {
                 saveInfo += s_currentMeta.saveDate;
             } else {
                 saveInfo += "Ninguna";
             }
-            uiDrawTextClipped(166.0f, 184.0f, 212.0f, saveInfo.c_str(), colAmber);
+            uiDrawTextClipped(200.0f, 180.0f, 176.0f, saveInfo.c_str(), colGold);
         } else {
-            uiDrawText(166.0f, 74.0f, "Directorio SDMC", colWhite);
-            uiDrawText(166.0f, 94.0f, "Seleccione una ROM para ver", colCyan);
-            uiDrawText(166.0f, 110.0f, "su ficha tecnica completa.", colCyan);
-            uiDrawText(166.0f, 136.0f, "Audio: Anillo Dual SPSC 32,728 Hz", colWhite);
-            uiDrawText(166.0f, 156.0f, "Motor: ARM11 JIT 60 FPS", colGray);
-        }
-    } else {
-        // MODO SINOPSIS Y DATOS
-        uiDrawTextClipped(166.0f, 52.0f, 212.0f, "SINOPSIS Y DATOS", colAmber);
-        uiDrawRect(164.0f, 66.0f, 212.0f, 1.0f, colAmber);
-
-        if(!selectedFile.empty() && !isDir) {
-            // Línea 1: Año y Género (y=74)
-            char l1[40];
-            if(s_metaLoaded && s_currentMeta.year > 0) {
-                snprintf(l1, sizeof(l1), "• Ano: %d | %s", s_currentMeta.year, s_currentMeta.genre.c_str());
-            } else {
-                snprintf(l1, sizeof(l1), "• Genero: %s", s_metaLoaded ? s_currentMeta.genre.c_str() : "Clasico");
-            }
-            uiDrawTextClipped(166.0f, 74.0f, 212.0f, l1, colWhite);
-
-            // Línea 2: Desarrollador (y=92)
-            std::string dev = s_metaLoaded && !s_currentMeta.developer.empty() ? s_currentMeta.developer : (s_metaLoaded && !s_currentMeta.publisher.empty() ? s_currentMeta.publisher : "Desconocido");
-            std::string devLine = "• Dev: " + dev;
-            uiDrawTextClipped(166.0f, 92.0f, 212.0f, devLine.c_str(), colCyan);
-
-            // Línea 3: Tiempo Jugado (y=110)
-            uiDrawTextClipped(166.0f, 110.0f, 212.0f, "• Tiempo: Registrado", colWhite);
-
-            // Líneas 4..7: Sinopsis formateada
-            std::string syn = s_metaLoaded && !s_currentMeta.synopsis.empty() ? s_currentMeta.synopsis : "Titulo clasico de Game Boy totalmente compatible con el nucleo GameYob.";
-            std::vector<std::string> synLines = wrapSynopsisText(syn, 34);
-            float sy = 128.0f;
-            for(size_t i = 0; i < synLines.size() && i < 3; i++) {
-                uiDrawTextClipped(166.0f, sy, 212.0f, synLines[i].c_str(), colGray);
-                sy += 15.0f;
-            }
-
-            // Estado al pie (y=184)
-            uiDrawTextClipped(166.0f, 184.0f, 212.0f, "• Nucleo: GameYob 100% OK", colGreen);
-        } else {
-            uiDrawText(166.0f, 74.0f, "Directorio SDMC", colWhite);
-            uiDrawText(166.0f, 94.0f, "Seleccione una ROM para ver", colCyan);
-            uiDrawText(166.0f, 110.0f, "su sinopsis y datos.", colCyan);
-            uiDrawText(166.0f, 136.0f, "Audio: Anillo Dual SPSC 32,728 Hz", colWhite);
-            uiDrawText(166.0f, 156.0f, "Motor: ARM11 JIT 60 FPS", colGray);
+            uiDrawText(200.0f, 80.0f, "Directorio SDMC", colWhite);
+            uiDrawText(200.0f, 100.0f, "Seleccione un archivo", colCyan);
+            uiDrawText(200.0f, 120.0f, "para ver su ficha tecnica.", colGray);
         }
     }
 
-    // 5. Barra Inferior de Comandos (y: 214..228)
-    uiDrawRect(14.0f, 214.0f, 372.0f, 15.0f, uiColorRGBA(10, 14, 20, 255));
-    uiDrawRectOutline(14.0f, 214.0f, 372.0f, 15.0f, 1.0f, uiColorRGBA(150, 118, 45, 255));
+    // 5. Barra Inferior Edge-to-Edge (x: 0..400, y: 214..240)
+    uiDrawRect(0.0f, 214.0f, 400.0f, 26.0f, colBarBg);
+    uiDrawRect(0.0f, 214.0f, 400.0f, 1.0f, colBarLine);
 
-    const char* footerText = "[A] Iniciar   [X] Arte   [Y] Ficha/Sinopsis   [SELECT] Menu";
-    float ftW = uiGetTextWidth(footerText, 1.0f);
-    float ftX = 200.0f - ftW * 0.5f;
-    if(ftX < 16.0f) ftX = 16.0f;
-    uiDrawText(ftX, 216.0f, footerText, colWhite);
+    // Izquierda (x=14, y=223): "[X] Alternar Arte"
+    uiDrawText(14.0f, 223.0f, "[X] Alternar Arte", colGray);
+
+    // Centro (x=200, y=223): "[A] Iniciar"
+    uiDrawTextCentered(200.0f, 223.0f, "[A] Iniciar", colGold);
+
+    // Derecha (rightX=386, y=223): "[Y] Ver Ficha Tecnica" o "[Y] Ver Sinopsis"
+    uiDrawTextRight(386.0f, 223.0f, s_showSynopsis ? "[Y] Ver Ficha Tecnica" : "[Y] Ver Sinopsis", colWhite);
 
     // Reset TexEnv para dejar el pipeline limpio
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
