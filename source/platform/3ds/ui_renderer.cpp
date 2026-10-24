@@ -237,17 +237,15 @@ void uiRenderInit() {
     static const u8 font_col[8] = {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(fontTable[':'], font_col, 8);
 
     // Glifos simétricos 8x8 optimizados (bitmasks explícitos para evitar deformaciones)
-    static const u8 font_V[8] = { 0x63, 0x63, 0x63, 0x36, 0x36, 0x1C, 0x08, 0x00 }; memcpy(fontTable['V'], font_V, 8);
-    static const u8 font_v[8] = { 0x00, 0x00, 0x63, 0x63, 0x36, 0x1C, 0x08, 0x00 }; memcpy(fontTable['v'], font_v, 8);
-    static const u8 font_X[8] = { 0x63, 0x63, 0x36, 0x1C, 0x1C, 0x36, 0x63, 0x00 }; memcpy(fontTable['X'], font_X, 8);
-    static const u8 font_x[8] = { 0x00, 0x00, 0x63, 0x36, 0x1C, 0x36, 0x63, 0x00 }; memcpy(fontTable['x'], font_x, 8);
-    static const u8 font_Y[8] = { 0x63, 0x63, 0x36, 0x1C, 0x08, 0x08, 0x08, 0x00 }; memcpy(fontTable['Y'], font_Y, 8);
-    static const u8 font_M[8] = { 0x63, 0x77, 0x7F, 0x6B, 0x63, 0x63, 0x63, 0x00 }; memcpy(fontTable['M'], font_M, 8);
-    static const u8 font_W[8] = { 0x63, 0x63, 0x63, 0x6B, 0x7F, 0x77, 0x63, 0x00 }; memcpy(fontTable['W'], font_W, 8);
-    static const u8 font_T[8] = { 0x7F, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00 }; memcpy(fontTable['T'], font_T, 8);
-    static const u8 font_S[8] = { 0x3E, 0x63, 0x60, 0x3E, 0x03, 0x63, 0x3E, 0x00 }; memcpy(fontTable['S'], font_S, 8);
-    static const u8 font_E[8] = { 0x7F, 0x60, 0x60, 0x7E, 0x60, 0x60, 0x7F, 0x00 }; memcpy(fontTable['E'], font_E, 8);
-    static const u8 font_R[8] = { 0x7E, 0x63, 0x63, 0x7E, 0x6C, 0x66, 0x63, 0x00 }; memcpy(fontTable['R'], font_R, 8);
+    static const u8 font_V[8] = { 0x42, 0x42, 0x24, 0x24, 0x24, 0x18, 0x18, 0x00 }; memcpy(fontTable['V'], font_V, 8);
+    static const u8 font_v[8] = { 0x00, 0x00, 0x42, 0x24, 0x24, 0x18, 0x18, 0x00 }; memcpy(fontTable['v'], font_v, 8);
+    static const u8 font_T[8] = { 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00 }; memcpy(fontTable['T'], font_T, 8);
+    static const u8 font_X[8] = { 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x00, 0x00 }; memcpy(fontTable['X'], font_X, 8);
+    static const u8 font_x[8] = { 0x00, 0x00, 0x42, 0x24, 0x18, 0x24, 0x42, 0x00 }; memcpy(fontTable['x'], font_x, 8);
+    static const u8 font_M[8] = { 0x42, 0x66, 0x5A, 0x42, 0x42, 0x42, 0x42, 0x00 }; memcpy(fontTable['M'], font_M, 8);
+    static const u8 font_W[8] = { 0x42, 0x42, 0x42, 0x42, 0x5A, 0x66, 0x42, 0x00 }; memcpy(fontTable['W'], font_W, 8);
+    static const u8 font_Y[8] = { 0x42, 0x24, 0x18, 0x10, 0x10, 0x10, 0x00, 0x00 }; memcpy(fontTable['Y'], font_Y, 8);
+    static const u8 font_S[8] = { 0x3C, 0x42, 0x38, 0x04, 0x42, 0x3C, 0x00, 0x00 }; memcpy(fontTable['S'], font_S, 8);
 
     // Acentos españoles minúsculas (tilde aguda en filas 0..1 + cuerpo base)
     memcpy(fontTable[0xE1], font8x8_basic['a'], 8); fontTable[0xE1][0] = 0x0C; fontTable[0xE1][1] = 0x18;
@@ -275,63 +273,53 @@ void uiRenderInit() {
     static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(fontTable[0xA1], invExc, 8);
     static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(fontTable[0xBF], invQst, 8);
 
-    // Generar atlas 256x256 con margen de seguridad PAD = 2 y sombras horneadas a 1:1
+    // Generar atlas 256x256 alineado desde cellX + 1 y cellY + 1 con sombra horneada 1:1
     for(int c = 0; c < 256; c++) {
-        int cellCol = c & 0x0F;
-        int cellRow = (c >> 4) & 0x0F;
-        int cellX = cellCol * 16;
-        int cellY = cellRow * 16;
+        int cellX = (c & 0x0F) * 16;
+        int cellY = (c >> 4) * 16;
 
-        int min_col = 8;
-        int max_col = -1;
-        for(int y = 0; y < 8; y++) {
-            u8 row = fontTable[c][y];
-            if(row != 0) {
-                for(int x = 0; x < 8; x++) {
-                    if(row & (0x80 >> x)) {
-                        if(x < min_col) min_col = x;
-                        if(x > max_col) max_col = x;
-                    }
+        int minCol = 7;
+        int maxCol = 0;
+        bool hasPixels = false;
+        for(int r = 0; r < 8; r++) {
+            u8 rowBits = fontTable[c][r];
+            for(int col = 0; col < 8; col++) {
+                if(rowBits & (0x80 >> col)) {
+                    if(col < minCol) minCol = col;
+                    if(col > maxCol) maxCol = col;
+                    hasPixels = true;
                 }
             }
         }
 
-        if(max_col < 0) {
+        if(!hasPixels || c == ' ') {
             s_glyphWidth[c] = 0.0f;
-            s_glyphAdvance[c] = 4.0f;
+            s_glyphAdvance[c] = (c == ' ') ? 4.0f : 2.0f;
             continue;
         }
 
-        int activeW = max_col - min_col + 1;
-        s_glyphWidth[c] = (float)(activeW + 1);   // Ancho visible real + 1px de sombra horneada
-        s_glyphAdvance[c] = (float)(activeW + 1); // Tracking de 1px de separación entre glifos
-
-        // Pase 1: Sombra horneada desplazada por PAD = 2 en X e Y, más (+1, +1) para la sombra
-        u32 shadowColor = uiColorRGBA(0, 0, 0, 180);
-        for(int row = 0; row < 8; row++) {
-            u8 rowBits = fontTable[c][row];
-            if(rowBits == 0) continue;
-            for(int col = min_col; col <= max_col; col++) {
+        int activeW = maxCol - minCol + 1;
+        for(int r = 0; r < 8; r++) {
+            u8 rowBits = fontTable[c][r];
+            for(int col = minCol; col <= maxCol; col++) {
                 if(rowBits & (0x80 >> col)) {
-                    int gx = (col - min_col) + 2;
-                    int gy = row + 2;
-                    temp[(cellY + gy + 1) * 256 + (cellX + gx + 1)] = shadowColor;
+                    int px = cellX + 1 + (col - minCol);
+                    int py = cellY + 1 + r;
+
+                    // Sombra horneada a la derecha y abajo (px + 1, py + 1)
+                    u32* shadowPtr = &temp[(py + 1) * 256 + (px + 1)];
+                    if(*shadowPtr == 0) {
+                        *shadowPtr = 0xA0000000; // Negro alpha 160
+                    }
+
+                    // Píxel del glifo en blanco puro opaco
+                    temp[py * 256 + px] = 0xFFFFFFFF;
                 }
             }
         }
 
-        // Pase 2: Glifo principal en blanco plano (255, 255, 255, 255) desplazado por PAD = 2
-        for(int row = 0; row < 8; row++) {
-            u8 rowBits = fontTable[c][row];
-            if(rowBits == 0) continue;
-            for(int col = min_col; col <= max_col; col++) {
-                if(rowBits & (0x80 >> col)) {
-                    int gx = (col - min_col) + 2;
-                    int gy = row + 2;
-                    temp[(cellY + gy) * 256 + (cellX + gx)] = 0xFFFFFFFF;
-                }
-            }
-        }
+        s_glyphWidth[c] = (float)(activeW + 1);   // Incluye la columna de la sombra
+        s_glyphAdvance[c] = (float)(activeW + 2); // 1px de separación limpia entre letras
     }
 
     // El espacio en blanco ' ' no tiene sombra y avanza 4px
@@ -342,7 +330,7 @@ void uiRenderInit() {
     C3D_SyncDisplayTransfer(
         temp, GX_BUFFER_DIM(256, 256),
         (u32*) s_fontAtlasTex.data, GX_BUFFER_DIM(256, 256),
-        GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+        GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_RAW_COPY(0) |
         GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
         GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
     );
@@ -730,31 +718,27 @@ static inline u8 getNextGlyph(const char*& p) {
     return c;
 }
 
-static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, float scaleY, u32 color) {
-    float gw = (float)s_glyphWidth[c];
+static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scaleX, float scaleY, u32 color) {
+    float gw = s_glyphWidth[c];
     if(gw <= 0.0f) {
         return;
     }
-    int activeW = (int)gw - 1;
-    if(activeW < 1) activeW = 1;
 
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
+    int gh = 9; // 8 px del glifo + 1 px de sombra horneada
 
-    int quadTexX0 = cellX + 1;
-    int quadTexX1 = cellX + 2 + activeW + 2;
-    int quadTexY0 = cellY + 1;
-    int quadTexY1 = cellY + 2 + 8 + 2;
+    // Coordenadas UV directas y exactas
+    float u0 = (float)(cellX + 1) / 256.0f;
+    float u1 = (float)(cellX + 1 + (int)gw) / 256.0f;
+    float v0 = (float)(cellY + 1) / 256.0f;
+    float v1 = (float)(cellY + 1 + gh) / 256.0f;
 
-    float u0 = (float)quadTexX0 / 256.0f;
-    float u1 = (float)quadTexX1 / 256.0f;
-    float v0 = (float)(256 - quadTexY0) / 256.0f;
-    float v1 = (float)(256 - quadTexY1) / 256.0f;
-
-    float x0 = x - scaleX;
-    float x1 = x0 + (float)(quadTexX1 - quadTexX0) * scaleX;
-    float y0 = y - scaleY;
-    float y1 = y0 + (float)(quadTexY1 - quadTexY0) * scaleY;
+    // Coordenadas de pantalla del quad
+    float x0 = penX;
+    float x1 = penX + (gw * scaleX);
+    float y0 = penY;
+    float y1 = penY + ((float)gh * scaleY);
 
     // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
@@ -768,8 +752,11 @@ static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, fl
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvColor(env0, color);
 
-    C3D_ImmDrawBegin(GPU_TRIANGLES);
-    emitUiQuad(x0, y0, x1, y1, u0, v0, u1, v1);
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(x0, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x1, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x0, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmDrawEnd();
 }
 
@@ -829,9 +816,10 @@ void uiDrawTextScaled(float x, float y, float scale, const char* text, u32 color
             text++;
         }
 
-        // Pase único por glifo (sombra horneada en la textura)
-        uiEmitGlyphQuad(penX, penY, c, scale, scale, color);
-        penX += (s_glyphAdvance[c] * scale);
+        if(s_glyphWidth[c] > 0.0f) {
+            uiEmitGlyphQuad(penX, penY, c, scale, scale, color);
+            penX += (s_glyphAdvance[c] * scale);
+        }
     }
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
@@ -877,7 +865,9 @@ float uiGetTextWidth(const char* text, float scale) {
             text++;
         }
 
-        totalW += (s_glyphAdvance[c] * scale);
+        if(s_glyphWidth[c] > 0.0f) {
+            totalW += (s_glyphAdvance[c] * scale);
+        }
     }
     if(totalW > maxLineW) maxLineW = totalW;
     return maxLineW;
@@ -947,22 +937,24 @@ void uiDrawTextClipped(float x, float y, float maxWidth, const char* text, u32 c
             text++;
         }
 
-        float gw = s_glyphWidth[c];
-        float ga = s_glyphAdvance[c];
+        if(s_glyphWidth[c] > 0.0f) {
+            float gw = s_glyphWidth[c];
+            float ga = s_glyphAdvance[c];
 
-        if((penX - x) + std::max(gw, ga) > maxWidth) {
-            float dotAdv = s_glyphAdvance['.'];
-            if((penX - x) + dotAdv * 2.0f <= maxWidth) {
-                uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
-                penX += dotAdv;
-                uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
+            if((penX - x) + std::max(gw, ga) > maxWidth) {
+                float dotAdv = s_glyphAdvance['.'];
+                if((penX - x) + dotAdv * 2.0f <= maxWidth) {
+                    uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
+                    penX += dotAdv;
+                    uiEmitGlyphQuad(penX, y, '.', 1.0f, 1.0f, color);
+                }
+                break;
             }
-            break;
-        }
 
-        // Pase único por glifo (sombra horneada en la textura)
-        uiEmitGlyphQuad(penX, y, c, 1.0f, 1.0f, color);
-        penX += ga;
+            // Pase único por glifo (sombra horneada en la textura)
+            uiEmitGlyphQuad(penX, y, c, 1.0f, 1.0f, color);
+            penX += ga;
+        }
     }
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
