@@ -445,6 +445,59 @@ void gfxTakeScreenshot() {
     delete[] image;
 }
 
+bool gfxSaveStateThumbnail(const char* thumbPath) {
+    if(thumbPath == nullptr || screenBuffer == nullptr) {
+        return false;
+    }
+
+    static u32 s_thumbBuf[128 * 128];
+    const u32 bgColor = (u32)12 | ((u32)16 << 8) | ((u32)24 << 16) | (0xFFu << 24);
+    for(int i = 0; i < 128 * 128; i++) {
+        s_thumbBuf[i] = bgColor;
+    }
+
+    for(int py = 0; py < 115; py++) {
+        int srcY = (py * 144) / 115;
+        if(srcY >= 144) {
+            srcY = 143;
+        }
+        int rowIdx = (srcY + 40) * 256 + 48;
+        int dstIdx = (py + 6) * 128;
+        for(int px = 0; px < 128; px++) {
+            int srcX = (px * 160) / 128;
+            if(srcX >= 160) {
+                srcX = 159;
+            }
+            u32 srcPx = screenBuffer[rowIdx + srcX];
+            u8 r = (srcPx >> 24) & 0xFF;
+            u8 g = (srcPx >> 16) & 0xFF;
+            u8 b = (srcPx >> 8) & 0xFF;
+            s_thumbBuf[dstIdx + px] = (u32)r | ((u32)g << 8) | ((u32)b << 16) | (0xFFu << 24);
+        }
+    }
+
+    FILE* f = fopen(thumbPath, "wb");
+    if(f == nullptr) {
+        return false;
+    }
+
+    const char header[8] = {'G', 'Y', 'T', 'H', 'M', '1', '\0', '\0'};
+    if(fwrite(header, 1, 8, f) != 8) {
+        fclose(f);
+        remove(thumbPath);
+        return false;
+    }
+
+    if(fwrite(s_thumbBuf, sizeof(u32), 128 * 128, f) != 128 * 128) {
+        fclose(f);
+        remove(thumbPath);
+        return false;
+    }
+
+    fclose(f);
+    return true;
+}
+
 void gfxDrawScreen() {
     uiUpdateMenuState();
 

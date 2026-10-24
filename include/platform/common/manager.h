@@ -26,6 +26,8 @@ bool mgrStateExists(int stateNum);
 bool mgrLoadState(int stateNum);
 bool mgrSaveState(int stateNum);
 void mgrDeleteState(int stateNum);
+void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen);
+void mgrRequestAutoloadState(int slot);
 
 void mgrRefreshPalette();
 void mgrCyclePalette();

@@ -9,4 +9,5 @@ u32* gfxGetScreenBuffer();
 u32* gfxGetSprBuffer();
 u32 gfxGetScreenPitch();
 void gfxTakeScreenshot();
+bool gfxSaveStateThumbnail(const char* thumbPath);
 void gfxDrawScreen();

@@ -690,6 +690,15 @@ bool FileChooser::updateChooser(char** result) {
     if(kDown & KEY_SELECT) {
         uiOpenConfigModal(UI_TAB_GAME);
     }
+    if(kDown & KEY_START) {
+        if(uiHasSavestateInPreviewSlot()) {
+            mgrRequestAutoloadState(uiGetPreviewSlot());
+        }
+        if(this->navigateToSelection(result)) {
+            stateNum = uiGetPreviewSlot();
+            return true;
+        }
+    }
 
     if(kDown & KEY_CSTICK_UP) {
         this->selection -= this->filesPerPage;

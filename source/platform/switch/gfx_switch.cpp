@@ -156,6 +156,11 @@ void gfxTakeScreenshot() {
     delete[] image;
 }
 
+bool gfxSaveStateThumbnail(const char* thumbPath) {
+    (void)thumbPath;
+    return false;
+}
+
 #define SEEK_PIXEL(buf, x, y, pitch) ((buf) + ((((y) * (pitch)) + (x))))
 #define DO_SCALE2X() if(Bp != Hp && Dp != Fp) {                    \
                          if(Dp == Bp) *(E0) = Dp;                  \

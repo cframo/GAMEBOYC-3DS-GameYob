@@ -497,6 +497,11 @@ static std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::
 static bool fastForward;
 
 static std::string romName;
+static int s_pendingAutoloadSlot = -1;
+
+void mgrRequestAutoloadState(int slot) {
+    s_pendingAutoloadSlot = slot;
+}
 
 static int fps;
 static std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> lastPrintTime;
@@ -601,6 +606,7 @@ void mgrPowerOn(const char* romFile) {
         std::ifstream romStream(romFile, std::ios::binary | std::ios::ate);
         if(!romStream.is_open()) {
             systemPrintDebug("Failed to open ROM file: %s\n", strerror(errno));
+            s_pendingAutoloadSlot = -1;
             return;
         }
 
@@ -659,6 +665,13 @@ void mgrPowerOn(const char* romFile) {
     }
 
     mgrReset();
+
+    if(s_pendingAutoloadSlot >= 0) {
+        int slotToLoad = s_pendingAutoloadSlot;
+        s_pendingAutoloadSlot = -1;
+        stateNum = slotToLoad;
+        mgrLoadState(slotToLoad);
+    }
 }
 
 void mgrPowerOff(bool save) {
@@ -698,6 +711,7 @@ void mgrSelectRom() {
 
     char* filename = romChooser.chooseFile();
     if(filename == NULL) {
+        s_pendingAutoloadSlot = -1;
         systemRequestExit();
         return;
     }
@@ -738,6 +752,21 @@ const std::string mgrGetStateName(int stateNum) {
     }
 
     return nameStream.str();
+}
+
+void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen) {
+    if(outPath == nullptr || maxLen == 0) {
+        return;
+    }
+    std::stringstream nameStream;
+    if(stateNum == -1) {
+        nameStream << mgrGetRomName() << ".sss";
+    } else {
+        nameStream << mgrGetRomName() << ".ss" << stateNum;
+    }
+    std::string path = nameStream.str();
+    strncpy(outPath, path.c_str(), maxLen - 1);
+    outPath[maxLen - 1] = '\0';
 }
 
 bool mgrStateExists(int stateNum) {
@@ -785,8 +814,16 @@ bool mgrSaveState(int stateNum) {
 
     bool ret = gameboy->saveState(stream);
     stream.close();
+
+    if(ret) {
+        char thumbPath[512];
+        mgrGetStateThumbPath(stateNum, thumbPath, sizeof(thumbPath));
+        gfxSaveStateThumbnail(thumbPath);
+    }
+
 #ifdef BACKEND_3DS
     uiInvalidateRomCache();
+    uiReloadSavestatePreview();
 #endif
     return ret;
 }
@@ -797,8 +834,13 @@ void mgrDeleteState(int stateNum) {
     }
 
     remove(mgrGetStateName(stateNum).c_str());
+    char thumbPath[512];
+    mgrGetStateThumbPath(stateNum, thumbPath, sizeof(thumbPath));
+    remove(thumbPath);
+
 #ifdef BACKEND_3DS
     uiInvalidateRomCache();
+    uiReloadSavestatePreview();
 #endif
 }
 

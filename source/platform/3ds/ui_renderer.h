@@ -42,6 +42,8 @@ void uiMoveRightPanelCursor(int delta);
 void uiAdjustRightPanelOption(int dir);
 
 void uiInvalidateRomCache(const std::string& romPath = "");
+void uiReloadSavestatePreview();
+bool uiHasSavestateInPreviewSlot();
 void uiAddBoxartFileToCache(const std::string& filename);
 bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser);
 

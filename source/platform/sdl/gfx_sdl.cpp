@@ -154,6 +154,11 @@ void gfxTakeScreenshot() {
     SDL_FreeSurface(surface);
 }
 
+bool gfxSaveStateThumbnail(const char* thumbPath) {
+    (void)thumbPath;
+    return false;
+}
+
 void gfxDrawScreen() {
     SDL_RenderClear(renderer);
 
