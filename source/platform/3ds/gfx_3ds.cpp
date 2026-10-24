@@ -106,7 +106,7 @@ bool gfxInit() {
     gfxSet3D(true);
     gfxInitialized = true;
 
-    if(!C3D_Init(0x80000)) {
+    if(!C3D_Init(0x100000)) {
         gfxCleanup();
         return false;
     }
