@@ -236,15 +236,14 @@ void uiRenderInit() {
     static const u8 font_dot[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(fontTable['.'], font_dot, 8);
     static const u8 font_col[8] = {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(fontTable[':'], font_col, 8);
 
-    // Glifos simétricos 8x8 optimizados (bitmasks explícitos para evitar deformaciones)
-    static const u8 font_V[8] = { 0x42, 0x42, 0x24, 0x24, 0x24, 0x18, 0x18, 0x00 }; memcpy(fontTable['V'], font_V, 8);
-    static const u8 font_v[8] = { 0x00, 0x00, 0x42, 0x24, 0x24, 0x18, 0x18, 0x00 }; memcpy(fontTable['v'], font_v, 8);
+    // Glifos simétricos 8x8 optimizados
+    static const u8 font_V[8] = { 0x82, 0x82, 0x44, 0x44, 0x28, 0x28, 0x10, 0x00 }; memcpy(fontTable['V'], font_V, 8);
+    static const u8 font_v[8] = { 0x00, 0x00, 0x82, 0x44, 0x44, 0x28, 0x10, 0x00 }; memcpy(fontTable['v'], font_v, 8);
+    static const u8 font_X[8] = { 0x82, 0x44, 0x28, 0x10, 0x28, 0x44, 0x82, 0x00 }; memcpy(fontTable['X'], font_X, 8);
+    static const u8 font_x[8] = { 0x00, 0x00, 0x82, 0x44, 0x28, 0x10, 0x28, 0x44 }; memcpy(fontTable['x'], font_x, 8);
+    static const u8 font_M[8] = { 0x82, 0xC6, 0xAA, 0x92, 0x82, 0x82, 0x82, 0x00 }; memcpy(fontTable['M'], font_M, 8);
+    static const u8 font_W[8] = { 0x82, 0x82, 0x82, 0x92, 0xAA, 0xC6, 0x82, 0x00 }; memcpy(fontTable['W'], font_W, 8);
     static const u8 font_T[8] = { 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00 }; memcpy(fontTable['T'], font_T, 8);
-    static const u8 font_X[8] = { 0x42, 0x24, 0x18, 0x18, 0x24, 0x42, 0x00, 0x00 }; memcpy(fontTable['X'], font_X, 8);
-    static const u8 font_x[8] = { 0x00, 0x00, 0x42, 0x24, 0x18, 0x24, 0x42, 0x00 }; memcpy(fontTable['x'], font_x, 8);
-    static const u8 font_M[8] = { 0x42, 0x66, 0x5A, 0x42, 0x42, 0x42, 0x42, 0x00 }; memcpy(fontTable['M'], font_M, 8);
-    static const u8 font_W[8] = { 0x42, 0x42, 0x42, 0x42, 0x5A, 0x66, 0x42, 0x00 }; memcpy(fontTable['W'], font_W, 8);
-    static const u8 font_Y[8] = { 0x42, 0x24, 0x18, 0x10, 0x10, 0x10, 0x00, 0x00 }; memcpy(fontTable['Y'], font_Y, 8);
     static const u8 font_S[8] = { 0x3C, 0x42, 0x38, 0x04, 0x42, 0x3C, 0x00, 0x00 }; memcpy(fontTable['S'], font_S, 8);
 
     // Acentos españoles minúsculas (tilde aguda en filas 0..1 + cuerpo base)
@@ -273,64 +272,83 @@ void uiRenderInit() {
     static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(fontTable[0xA1], invExc, 8);
     static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(fontTable[0xBF], invQst, 8);
 
-    // Generar atlas 256x256 alineado desde cellX + 1 y cellY + 1 con sombra horneada 1:1
+    // Generar atlas 256x256 con sombras horneadas a 1:1
     for(int c = 0; c < 256; c++) {
-        int cellX = (c & 0x0F) * 16;
-        int cellY = (c >> 4) * 16;
+        int cellCol = c & 0x0F;
+        int cellRow = (c >> 4) & 0x0F;
+        int cellX = cellCol * 16;
+        int cellY = cellRow * 16;
 
-        int minCol = 7;
-        int maxCol = 0;
-        bool hasPixels = false;
-        for(int r = 0; r < 8; r++) {
-            u8 rowBits = fontTable[c][r];
-            for(int col = 0; col < 8; col++) {
-                if(rowBits & (0x80 >> col)) {
-                    if(col < minCol) minCol = col;
-                    if(col > maxCol) maxCol = col;
-                    hasPixels = true;
+        int min_col = 8;
+        int max_col = -1;
+        for(int y = 0; y < 8; y++) {
+            u8 row = fontTable[c][y];
+            if(row != 0) {
+                for(int x = 0; x < 8; x++) {
+                    if(row & (0x80 >> x)) {
+                        if(x < min_col) min_col = x;
+                        if(x > max_col) max_col = x;
+                    }
                 }
             }
         }
 
-        if(!hasPixels || c == ' ') {
+        if(max_col < 0) {
             s_glyphWidth[c] = 0.0f;
-            s_glyphAdvance[c] = (c == ' ') ? 4.0f : 2.0f;
+            s_glyphAdvance[c] = 4.0f;
             continue;
         }
 
-        int activeW = maxCol - minCol + 1;
-        for(int r = 0; r < 8; r++) {
-            u8 rowBits = fontTable[c][r];
-            for(int col = minCol; col <= maxCol; col++) {
+        int activeW = max_col - min_col + 1;
+        s_glyphWidth[c] = (float)(activeW + 1);   // Ancho visible real + 1px de sombra horneada
+        s_glyphAdvance[c] = (float)(activeW + 1); // Tracking de 1px de separación entre glifos
+
+        // Pase 1: Sombra horneada desplazada a (px + 1, py + 1) con RGBA(0, 0, 0, 180)
+        u32 shadowColor = uiColorRGBA(0, 0, 0, 180);
+        for(int row = 0; row < 8; row++) {
+            u8 rowBits = fontTable[c][row];
+            if(rowBits == 0) continue;
+            for(int col = min_col; col <= max_col; col++) {
                 if(rowBits & (0x80 >> col)) {
-                    int px = cellX + 1 + (col - minCol);
-                    int py = cellY + 1 + r;
-
-                    // Sombra horneada a la derecha y abajo (px + 1, py + 1)
-                    u32* shadowPtr = &temp[(py + 1) * 256 + (px + 1)];
-                    if(*shadowPtr == 0) {
-                        *shadowPtr = 0xA0000000; // Negro alpha 160
-                    }
-
-                    // Píxel del glifo en blanco puro opaco
-                    temp[py * 256 + px] = 0xFFFFFFFF;
+                    int px = col - min_col;
+                    int py = row;
+                    temp[(cellY + py + 1) * 256 + (cellX + px + 1)] = shadowColor;
                 }
             }
         }
 
-        s_glyphWidth[c] = (float)(activeW + 1);   // Incluye la columna de la sombra
-        s_glyphAdvance[c] = (float)(activeW + 2); // 1px de separación limpia entre letras
+        // Pase 2: Glifo principal en blanco plano (255, 255, 255, 255) en (px, py)
+        for(int row = 0; row < 8; row++) {
+            u8 rowBits = fontTable[c][row];
+            if(rowBits == 0) continue;
+            for(int col = min_col; col <= max_col; col++) {
+                if(rowBits & (0x80 >> col)) {
+                    int px = col - min_col;
+                    int py = row;
+                    temp[(cellY + py) * 256 + (cellX + px)] = 0xFFFFFFFF;
+                }
+            }
+        }
     }
 
     // El espacio en blanco ' ' no tiene sombra y avanza 4px
     s_glyphWidth[' '] = 0.0f;
     s_glyphAdvance[' '] = 4.0f;
 
+    // Métricas explícitas exactas para glifos anchos de 7px
+    s_glyphWidth['V'] = 7.0f; s_glyphAdvance['V'] = 8.0f;
+    s_glyphWidth['v'] = 7.0f; s_glyphAdvance['v'] = 8.0f;
+    s_glyphWidth['X'] = 7.0f; s_glyphAdvance['X'] = 8.0f;
+    s_glyphWidth['x'] = 7.0f; s_glyphAdvance['x'] = 8.0f;
+    s_glyphWidth['M'] = 7.0f; s_glyphAdvance['M'] = 8.0f;
+    s_glyphWidth['W'] = 7.0f; s_glyphAdvance['W'] = 8.0f;
+    s_glyphWidth['T'] = 7.0f; s_glyphAdvance['T'] = 8.0f;
+
     GSPGPU_FlushDataCache(temp, 256 * 256 * sizeof(u32));
     C3D_SyncDisplayTransfer(
         temp, GX_BUFFER_DIM(256, 256),
         (u32*) s_fontAtlasTex.data, GX_BUFFER_DIM(256, 256),
-        GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_RAW_COPY(0) |
+        GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
         GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
         GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
     );
@@ -718,27 +736,18 @@ static inline u8 getNextGlyph(const char*& p) {
     return c;
 }
 
-static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scaleX, float scaleY, u32 color) {
-    float gw = s_glyphWidth[c];
+static inline void uiEmitGlyphQuad(float x, float y, uint8_t c, float scaleX, float scaleY, u32 color) {
+    float gw = (float)s_glyphWidth[c];
     if(gw <= 0.0f) {
         return;
     }
-
+    float gh = 8.0f;
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
-    int gh = 9; // 8 px del glifo + 1 px de sombra horneada
-
-    // Coordenadas UV directas y exactas
-    float u0 = (float)(cellX + 1) / 256.0f;
-    float u1 = (float)(cellX + 1 + (int)gw) / 256.0f;
-    float v0 = (float)(cellY + 1) / 256.0f;
-    float v1 = (float)(cellY + 1 + gh) / 256.0f;
-
-    // Coordenadas de pantalla del quad
-    float x0 = penX;
-    float x1 = penX + (gw * scaleX);
-    float y0 = penY;
-    float y1 = penY + ((float)gh * scaleY);
+    float u0 = (float)cellX / 256.0f;
+    float u1 = ((float)cellX + gw) / 256.0f;
+    float v0 = (float)cellY / 256.0f;
+    float v1 = ((float)cellY + gh) / 256.0f;
 
     // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
@@ -752,11 +761,8 @@ static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scal
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvColor(env0, color);
 
-    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
-    C3D_ImmSendAttrib(x0, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x1, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x0, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    emitUiQuad(x, y, x + (gw * scaleX), y + (gh * scaleY), u0, v0, u1, v1);
     C3D_ImmDrawEnd();
 }
 
@@ -1928,7 +1934,7 @@ void uiDrawConfigModal() {
     if(s_modalMessage[0] != '\0' && (osGetTime() - s_modalMessageTime < 1800)) {
         uiDrawTextCentered(160.0f, 192.0f, s_modalMessage, s_modalMessageColor);
     } else {
-        uiDrawTextCentered(160.0f, 192.0f, "Cruceta/Toque: Cambiar    B: Volver", UI_COLOR_DARKGRAY);
+        uiDrawTextCentered(160.0f, 192.0f, "Cruceta/Toque: Modificar    B: Salir", UI_COLOR_DARKGRAY);
     }
 
     // 6. Dock inferior (y: 216..236)
@@ -2392,8 +2398,12 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
     // Botón 4: Salir
     float b4X = 242.0f;
-    uiDrawModernButton(b4X, btnY, btnW, btnH, "X Salir",
+    uiDrawModernButton(b4X, btnY, btnW, btnH, "",
                        uiColorRGBA(80, 25, 25, 255), uiColorRGBA(180, 50, 50, 255), false);
+    float b4TotalW = s_glyphAdvance['X'] + 4.0f + uiGetTextWidth("Salir", 1.0f);
+    float b4StartX = b4X + (btnW - b4TotalW) * 0.5f;
+    uiDrawText(b4StartX, btnY + (btnH - 10.0f) * 0.5f, "X", colWhite);
+    uiDrawText(b4StartX + s_glyphAdvance['X'] + 4.0f, btnY + (btnH - 10.0f) * 0.5f, "Salir", colWhite);
 
     // Reset TexEnv para dejar el pipeline limpio
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
