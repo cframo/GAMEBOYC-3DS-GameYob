@@ -12,9 +12,13 @@
 #include "platform/common/cheatengine.h"
 #include "platform/common/config.h"
 #include "platform/common/manager.h"
+#include "platform/gfx.h"
 #include "platform/input.h"
 #include "platform/system.h"
 #include "platform/ui.h"
+#ifdef BACKEND_3DS
+#include "platform/3ds/ui_renderer.h"
+#endif
 #include "apu.h"
 #include "cartridge.h"
 #include "gameboy.h"
@@ -68,7 +72,16 @@ void subMenuGenericUpdateFunc() {
 
 void suspendFunc(int value) {
     printMenuMessage("Saving state...");
-    mgrSaveState(-1);
+    if(mgrSaveState(-1)) {
+        std::string stateFile = mgrGetStateName(-1);
+        char thumbPath[512];
+        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
+        gfxSaveStateThumbnail(thumbPath);
+#ifdef BACKEND_3DS
+        uiInvalidateRomCache();
+        uiReloadSavestatePreview();
+#endif
+    }
     printMessage[0] = '\0';
 
     closeMenu();
@@ -149,9 +162,17 @@ void stateSelectFunc(int value) {
 void stateSaveFunc(int value) {
     printMenuMessage("Saving state...");
     if(mgrSaveState(stateNum)) {
+        std::string stateFile = mgrGetStateName(stateNum);
+        char thumbPath[512];
+        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
+        gfxSaveStateThumbnail(thumbPath);
+#ifdef BACKEND_3DS
+        uiInvalidateRomCache();
+        uiReloadSavestatePreview();
+#endif
         printMenuMessage("State saved.");
     } else {
-        printMenuMessage("Could not saveImage state.");
+        printMenuMessage("Could not save state.");
     }
 
     // Will activate the other state options
@@ -173,7 +194,15 @@ void stateLoadFunc(int value) {
 }
 
 void stateDeleteFunc(int value) {
+    std::string stateFile = mgrGetStateName(stateNum);
     mgrDeleteState(stateNum);
+    char thumbPath[512];
+    mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
+    remove(thumbPath);
+#ifdef BACKEND_3DS
+    uiInvalidateRomCache();
+    uiReloadSavestatePreview();
+#endif
 
     // Will grey out the other state options
     stateSelectFunc(stateNum);

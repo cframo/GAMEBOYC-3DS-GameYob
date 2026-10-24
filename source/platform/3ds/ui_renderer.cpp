@@ -1515,12 +1515,13 @@ void uiUpdateMenuState() {
 
 static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
     bool slotHasState = false;
+    std::string stateFile = "";
     if(!currentPath.empty()) {
+        stateFile = currentPath + ".ys" + std::to_string(slot);
         auto it = s_romCache.find(currentPath);
         if(it != s_romCache.end()) {
             slotHasState = (it->second.savestateMask & (1 << slot)) != 0;
         } else {
-            std::string stateFile = currentPath + ".ys" + std::to_string(slot);
             struct stat stState;
             slotHasState = (stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0);
         }
@@ -1531,11 +1532,12 @@ static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
         s_loadedThumbKey = thumbKey;
         s_savestateTexValid = false;
         if(slotHasState && s_savestateTexAllocated) {
-            std::string thumbPath = currentPath + ".ss" + std::to_string(slot);
-            FILE* f = fopen(thumbPath.c_str(), "rb");
+            char thumbPath[512];
+            mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
+            FILE* f = fopen(thumbPath, "rb");
             if(f != nullptr) {
                 char hdr[8];
-                if(fread(hdr, 1, 8, f) == 8 && memcmp(hdr, "GYTHM1\0\0", 8) == 0) {
+                if(fread(hdr, 1, 8, f) == 8 && (memcmp(hdr, "GYTHM1\0\0", 8) == 0 || memcmp(hdr, "GYTHM1\0", 7) == 0)) {
                     u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
                     if(temp != nullptr) {
                         if(fread(temp, sizeof(u32), 128 * 128, f) == 128 * 128) {
@@ -2409,29 +2411,17 @@ void uiDrawWireframeTest() {
 
 bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser) {
     if(s_brMode == BR_MODE_PREVIEW) {
-        // Selector de Slots: < Slot > en y: 158..176
-        if(py >= 158 && py <= 176) {
-            if(px < 253) {
+        // Selector de Slots: flechas < y > en y: 160..176
+        if(py >= 160 && py <= 176 && (px < 235 || px > 271)) {
+            if(px < 235) {
                 uiCyclePreviewSlot(-1);
             } else {
                 uiCyclePreviewSlot(1);
             }
             return false;
         }
-        // Tap en Visor (y: 44..130, x: 211..295) para iniciar juego o cargar estado
-        if(py >= 44 && py <= 130 && px >= 211 && px <= 295) {
-            if(chooser != nullptr && chooser->getSelection() >= 0) {
-                if(uiHasSavestateInPreviewSlot()) {
-                    mgrRequestAutoloadState(uiGetPreviewSlot());
-                }
-                if(chooser->navigateToSelection(result)) {
-                    stateNum = uiGetPreviewSlot();
-                    return true;
-                }
-            }
-        }
-        // Tap en botón de acción inferior (y: 176..196, x: 200..306)
-        if(py >= 176 && py <= 196 && px >= 200 && px <= 306) {
+        // Tap en Visor / Card de la captura (x: 196..308, y: 44..198) para iniciar juego o cargar estado
+        if(px >= 196 && px <= 308 && py >= 44 && py <= 198) {
             if(chooser != nullptr && chooser->getSelection() >= 0) {
                 if(uiHasSavestateInPreviewSlot()) {
                     mgrRequestAutoloadState(uiGetPreviewSlot());

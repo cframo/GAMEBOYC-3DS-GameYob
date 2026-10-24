@@ -23,9 +23,11 @@ void mgrSelectRom();
 void mgrWriteSave();
 
 bool mgrStateExists(int stateNum);
+const std::string mgrGetStateName(int stateNum);
 bool mgrLoadState(int stateNum);
 bool mgrSaveState(int stateNum);
 void mgrDeleteState(int stateNum);
+void mgrDeriveThumbPath(const char* statePath, char* outThumbPath, size_t maxLen);
 void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen);
 void mgrRequestAutoloadState(int slot);
 

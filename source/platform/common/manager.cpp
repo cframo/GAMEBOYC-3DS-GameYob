@@ -754,19 +754,22 @@ const std::string mgrGetStateName(int stateNum) {
     return nameStream.str();
 }
 
-void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen) {
-    if(outPath == nullptr || maxLen == 0) {
-        return;
-    }
-    std::stringstream nameStream;
-    if(stateNum == -1) {
-        nameStream << mgrGetRomName() << ".sss";
+void mgrDeriveThumbPath(const char* statePath, char* outThumbPath, size_t maxLen) {
+    if(!statePath || !outThumbPath || maxLen == 0) return;
+    strncpy(outThumbPath, statePath, maxLen - 1);
+    outThumbPath[maxLen - 1] = '\0';
+    // Si la ruta contiene ".ys", reemplazar por ".ss"
+    char* p = strstr(outThumbPath, ".ys");
+    if(p) {
+        p[1] = 's'; // cambia 'y' por 's' -> ".ss"
     } else {
-        nameStream << mgrGetRomName() << ".ss" << stateNum;
+        strncat(outThumbPath, ".ss", maxLen - strlen(outThumbPath) - 1);
     }
-    std::string path = nameStream.str();
-    strncpy(outPath, path.c_str(), maxLen - 1);
-    outPath[maxLen - 1] = '\0';
+}
+
+void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen) {
+    std::string stateName = mgrGetStateName(stateNum);
+    mgrDeriveThumbPath(stateName.c_str(), outPath, maxLen);
 }
 
 bool mgrStateExists(int stateNum) {
@@ -816,8 +819,9 @@ bool mgrSaveState(int stateNum) {
     stream.close();
 
     if(ret) {
+        std::string stateFile = mgrGetStateName(stateNum);
         char thumbPath[512];
-        mgrGetStateThumbPath(stateNum, thumbPath, sizeof(thumbPath));
+        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
         gfxSaveStateThumbnail(thumbPath);
     }
 
@@ -833,9 +837,10 @@ void mgrDeleteState(int stateNum) {
         return;
     }
 
-    remove(mgrGetStateName(stateNum).c_str());
+    std::string stateFile = mgrGetStateName(stateNum);
+    remove(stateFile.c_str());
     char thumbPath[512];
-    mgrGetStateThumbPath(stateNum, thumbPath, sizeof(thumbPath));
+    mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
     remove(thumbPath);
 
 #ifdef BACKEND_3DS
