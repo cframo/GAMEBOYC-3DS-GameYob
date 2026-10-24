@@ -785,6 +785,9 @@ bool mgrSaveState(int stateNum) {
 
     bool ret = gameboy->saveState(stream);
     stream.close();
+#ifdef BACKEND_3DS
+    uiInvalidateRomCache();
+#endif
     return ret;
 }
 
@@ -794,6 +797,9 @@ void mgrDeleteState(int stateNum) {
     }
 
     remove(mgrGetStateName(stateNum).c_str());
+#ifdef BACKEND_3DS
+    uiInvalidateRomCache();
+#endif
 }
 
 void mgrRefreshPalette() {

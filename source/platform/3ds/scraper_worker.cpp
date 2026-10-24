@@ -1,4 +1,5 @@
 #include "platform/3ds/scraper_worker.h"
+#include "platform/3ds/ui_renderer.h"
 
 #include <3ds.h>
 #include <stdio.h>
@@ -372,6 +373,7 @@ static bool downloadWithCurl(const std::string& url, const std::string& outPath,
     remove(outPath.c_str());
     if(rename(tmpPath.c_str(), outPath.c_str()) == 0) {
         scraperSetStatus("DL:OK");
+        uiAddBoxartFileToCache(outPath);
         return true;
     } else {
         remove(tmpPath.c_str());
@@ -568,6 +570,7 @@ static bool downloadWithSocket(const std::string& host, const std::string& path,
     remove(outPath.c_str());
     if(rename(tmpPath.c_str(), outPath.c_str()) == 0) {
         scraperSetStatus("DL:OK");
+        uiAddBoxartFileToCache(outPath);
         return true;
     } else {
         remove(tmpPath.c_str());
@@ -606,6 +609,7 @@ static void scraperThreadFunc(void* arg) {
 
         struct stat st;
         if(stat(targetPng.c_str(), &st) == 0 && st.st_size > 0) {
+            uiAddBoxartFileToCache(targetPng);
             LightLock_Lock(&s_queueLock);
             s_readyCovers.insert(job.romPath);
             s_isJobActive = false;
@@ -614,6 +618,7 @@ static void scraperThreadFunc(void* arg) {
             continue;
         }
         if(!targetTitlePng.empty() && stat(targetTitlePng.c_str(), &st) == 0 && st.st_size > 0) {
+            uiAddBoxartFileToCache(targetTitlePng);
             LightLock_Lock(&s_queueLock);
             s_readyCovers.insert(job.romPath);
             s_isJobActive = false;

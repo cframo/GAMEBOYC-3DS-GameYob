@@ -631,6 +631,9 @@ bool FileChooser::updateChooser(char** result) {
                 float tapY = (float) this->touchStartPos.py - LIST_TOP + this->scrollY;
                 int tappedIndex = (int) (tapY / ITEM_HEIGHT);
                 if(tappedIndex >= 0 && tappedIndex < this->numFiles) {
+                    if(uiGetBottomRightMode() != 0) {
+                        uiSetBottomRightMode(0);
+                    }
                     if(this->selection == tappedIndex) {
                         // Doble tap o confirmar elemento seleccionado
                         if(this->navigateToSelection(result)) {
@@ -688,13 +691,13 @@ bool FileChooser::updateChooser(char** result) {
         uiOpenConfigModal(UI_TAB_GAME);
     }
 
-    if(kDown & KEY_L) {
+    if(kDown & KEY_CSTICK_UP) {
         this->selection -= this->filesPerPage;
         if(this->selection < 0) {
             this->selection = 0;
         }
         this->updateScrollUp();
-    } else if(kDown & KEY_R) {
+    } else if(kDown & KEY_CSTICK_DOWN) {
         this->selection += this->filesPerPage;
         if(this->selection >= this->numFiles) {
             this->selection = this->numFiles > 0 ? this->numFiles - 1 : 0;
@@ -702,57 +705,102 @@ bool FileChooser::updateChooser(char** result) {
         this->updateScrollDown();
     }
 
-    if(kDown & KEY_A) {
-        if(this->navigateToSelection(result)) {
-            stateNum = uiGetPreviewSlot();
-            return true;
-        }
-    } else if(kDown & KEY_B) {
-        if(this->canQuit && this->directory.compare("/") == 0) {
-            *result = nullptr;
-            return true;
-        }
+    if(kDown & KEY_L) {
+        uiCycleBottomRightMode(-1);
+    } else if(kDown & KEY_R) {
+        uiCycleBottomRightMode(1);
+    }
 
-        this->navigateBack();
-        this->refreshContents();
-        this->scrollY = 0.0f;
-        this->scrollVelocity = 0.0f;
+    if(uiGetBottomRightMode() != 0) {
+        if(kDown & KEY_A) {
+            uiAdjustRightPanelOption(1);
+        } else if(kDown & KEY_B) {
+            uiSetBottomRightMode(0);
+        } else {
+            bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
+            bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+            bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+            bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+
+            static u64 nextRepeatPanel = 0;
+            u64 now = osGetTime();
+            if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeatPanel && nextRepeatPanel != 0) {
+                upPressed = true;
+                nextRepeatPanel = now + 150;
+            } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeatPanel && nextRepeatPanel != 0) {
+                downPressed = true;
+                nextRepeatPanel = now + 150;
+            }
+
+            if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
+                nextRepeatPanel = now + 250;
+            } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
+                nextRepeatPanel = 0;
+            }
+
+            if(upPressed) {
+                uiMoveRightPanelCursor(-1);
+            } else if(downPressed) {
+                uiMoveRightPanelCursor(1);
+            } else if(leftPressed) {
+                uiAdjustRightPanelOption(-1);
+            } else if(rightPressed) {
+                uiAdjustRightPanelOption(1);
+            }
+        }
     } else {
-        bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
-        bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
-        bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
-        bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
-
-        static u64 nextRepeat = 0;
-        u64 now = osGetTime();
-        if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeat && nextRepeat != 0) {
-            upPressed = true;
-            nextRepeat = now + 80;
-        } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeat && nextRepeat != 0) {
-            downPressed = true;
-            nextRepeat = now + 80;
-        }
-
-        if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
-            nextRepeat = now + 250;
-        } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
-            nextRepeat = 0;
-        }
-
-        if(upPressed) {
-            if(this->selection > 0) {
-                this->selection--;
-                this->updateScrollUp();
+        if(kDown & KEY_A) {
+            if(this->navigateToSelection(result)) {
+                stateNum = uiGetPreviewSlot();
+                return true;
             }
-        } else if(downPressed) {
-            if(this->selection < this->numFiles - 1) {
-                this->selection++;
-                this->updateScrollDown();
+        } else if(kDown & KEY_B) {
+            if(this->canQuit && this->directory.compare("/") == 0) {
+                *result = nullptr;
+                return true;
             }
-        } else if(leftPressed) {
-            uiCyclePreviewSlot(-1);
-        } else if(rightPressed) {
-            uiCyclePreviewSlot(1);
+
+            this->navigateBack();
+            this->refreshContents();
+            this->scrollY = 0.0f;
+            this->scrollVelocity = 0.0f;
+        } else {
+            bool upPressed = (kDown & (KEY_DUP | KEY_CPAD_UP)) != 0;
+            bool downPressed = (kDown & (KEY_DDOWN | KEY_CPAD_DOWN)) != 0;
+            bool leftPressed = (kDown & (KEY_DLEFT | KEY_CPAD_LEFT)) != 0;
+            bool rightPressed = (kDown & (KEY_DRIGHT | KEY_CPAD_RIGHT)) != 0;
+
+            static u64 nextRepeat = 0;
+            u64 now = osGetTime();
+            if((kHeld & (KEY_DUP | KEY_CPAD_UP)) && now >= nextRepeat && nextRepeat != 0) {
+                upPressed = true;
+                nextRepeat = now + 80;
+            } else if((kHeld & (KEY_DDOWN | KEY_CPAD_DOWN)) && now >= nextRepeat && nextRepeat != 0) {
+                downPressed = true;
+                nextRepeat = now + 80;
+            }
+
+            if(kDown & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN)) {
+                nextRepeat = now + 250;
+            } else if(!(kHeld & (KEY_DUP | KEY_CPAD_UP | KEY_DDOWN | KEY_CPAD_DOWN))) {
+                nextRepeat = 0;
+            }
+
+            if(upPressed) {
+                if(this->selection > 0) {
+                    this->selection--;
+                    this->updateScrollUp();
+                }
+            } else if(downPressed) {
+                if(this->selection < this->numFiles - 1) {
+                    this->selection++;
+                    this->updateScrollDown();
+                }
+            } else if(leftPressed) {
+                uiCyclePreviewSlot(-1);
+            } else if(rightPressed) {
+                uiCyclePreviewSlot(1);
+            }
         }
     }
 

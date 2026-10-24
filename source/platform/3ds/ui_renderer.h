@@ -34,9 +34,15 @@ enum BottomRightMode {
     BR_MODE_PALETTE = 2
 };
 
-void uiSetBottomRightMode(BottomRightMode mode);
-BottomRightMode uiGetBottomRightMode();
-void uiCycleBottomRightMode();
+int uiGetBottomRightMode();
+void uiSetBottomRightMode(int mode);
+void uiCycleBottomRightMode(int dir = 1);
+int uiGetRightPanelCursor();
+void uiMoveRightPanelCursor(int delta);
+void uiAdjustRightPanelOption(int dir);
+
+void uiInvalidateRomCache(const std::string& romPath = "");
+void uiAddBoxartFileToCache(const std::string& filename);
 bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser);
 
 const C3D_Mtx* gfxGetProjectionTop();

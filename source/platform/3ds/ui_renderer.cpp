@@ -4,6 +4,9 @@
 #include <string.h>
 #include <string>
 #include <vector>
+#include <deque>
+#include <unordered_map>
+#include <algorithm>
 #include <cmath>
 #include <stdio.h>
 #include <sys/stat.h>
@@ -24,13 +27,144 @@
 #include "platform/common/cheatengine.h"
 #include "platform/3ds/scraper_worker.h"
 #include "platform/3ds/ui_renderer.h"
-#include "platform/3ds/ui_font_data.h"
 #include "platform/input.h"
 #include "gameboy.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
+
+// Fuente bitmap nativa 8x8 (128 caracteres base)
+static const u8 font8x8_basic[128][8] = {
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x7e, 0x81, 0xa5, 0x81, 0xbd, 0x99, 0x81, 0x7e},
+    {0x7e, 0xff, 0xdb, 0xff, 0xc3, 0xe7, 0xff, 0x7e},
+    {0x6c, 0xfe, 0xfe, 0xfe, 0x7c, 0x38, 0x10, 0x00},
+    {0x10, 0x38, 0x7c, 0xfe, 0x7c, 0x38, 0x10, 0x00},
+    {0x38, 0x7c, 0x38, 0xfe, 0xfe, 0xd6, 0x10, 0x38},
+    {0x10, 0x38, 0x7c, 0xfe, 0xfe, 0x7c, 0x10, 0x38},
+    {0x00, 0x00, 0x18, 0x3c, 0x3c, 0x18, 0x00, 0x00},
+    {0xff, 0xff, 0xe7, 0xc3, 0xc3, 0xe7, 0xff, 0xff},
+    {0x00, 0x3c, 0x66, 0x42, 0x42, 0x66, 0x3c, 0x00},
+    {0xff, 0xc3, 0x99, 0xbd, 0xbd, 0x99, 0xc3, 0xff},
+    {0x0f, 0x07, 0x0f, 0x7d, 0xcc, 0xcc, 0xcc, 0x78},
+    {0x3c, 0x66, 0x66, 0x66, 0x3c, 0x18, 0x7e, 0x18},
+    {0x3f, 0x33, 0x3f, 0x30, 0x30, 0x70, 0xf0, 0xe0},
+    {0x7f, 0x63, 0x7f, 0x63, 0x63, 0x67, 0xe6, 0xc0},
+    {0x18, 0xdb, 0x3c, 0xe7, 0xe7, 0x3c, 0xdb, 0x18},
+    {0x80, 0xe0, 0xf8, 0xfe, 0xf8, 0xe0, 0x80, 0x00},
+    {0x02, 0x0e, 0x3e, 0xfe, 0x3e, 0x0e, 0x02, 0x00},
+    {0x18, 0x3c, 0x7e, 0x18, 0x18, 0x7e, 0x3c, 0x18},
+    {0x66, 0x66, 0x66, 0x66, 0x66, 0x00, 0x66, 0x00},
+    {0x7f, 0xdb, 0xdb, 0x7b, 0x1b, 0x1b, 0x1b, 0x00},
+    {0x3e, 0x61, 0x3c, 0x66, 0x66, 0x3c, 0x86, 0x7c},
+    {0x00, 0x00, 0x00, 0x00, 0x7e, 0x7e, 0x7e, 0x00},
+    {0x18, 0x3c, 0x7e, 0x18, 0x7e, 0x3c, 0x18, 0xff},
+    {0x18, 0x3c, 0x7e, 0x18, 0x18, 0x18, 0x18, 0x00},
+    {0x18, 0x18, 0x18, 0x18, 0x7e, 0x3c, 0x18, 0x00},
+    {0x00, 0x18, 0x0c, 0xfe, 0x0c, 0x18, 0x00, 0x00},
+    {0x00, 0x30, 0x60, 0xfe, 0x60, 0x30, 0x00, 0x00},
+    {0x00, 0x00, 0xc0, 0xc0, 0xc0, 0xfe, 0x00, 0x00},
+    {0x00, 0x24, 0x66, 0xff, 0x66, 0x24, 0x00, 0x00},
+    {0x00, 0x18, 0x3c, 0x7e, 0xff, 0xff, 0x00, 0x00},
+    {0x00, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x18, 0x3c, 0x3c, 0x18, 0x18, 0x00, 0x18, 0x00},
+    {0x66, 0x66, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x6c, 0x6c, 0xfe, 0x6c, 0xfe, 0x6c, 0x6c, 0x00},
+    {0x18, 0x3e, 0x60, 0x3c, 0x06, 0x7c, 0x18, 0x00},
+    {0x00, 0xc6, 0xcc, 0x18, 0x30, 0x66, 0xc6, 0x00},
+    {0x38, 0x6c, 0x38, 0x76, 0xdc, 0xcc, 0x76, 0x00},
+    {0x18, 0x18, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x0c, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0c, 0x00},
+    {0x30, 0x18, 0x0c, 0x0c, 0x0c, 0x18, 0x30, 0x00},
+    {0x00, 0x66, 0x3c, 0xff, 0x3c, 0x66, 0x00, 0x00},
+    {0x00, 0x18, 0x18, 0x7e, 0x18, 0x18, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30},
+    {0x00, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00},
+    {0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0, 0x80, 0x00},
+    {0x38, 0x6c, 0xc6, 0xd6, 0xc6, 0x6c, 0x38, 0x00},
+    {0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x00},
+    {0x7c, 0xc6, 0x06, 0x1c, 0x30, 0x66, 0xfe, 0x00},
+    {0x7c, 0xc6, 0x06, 0x3c, 0x06, 0xc6, 0x7c, 0x00},
+    {0x1c, 0x3c, 0x6c, 0xcc, 0xfe, 0x0c, 0x1e, 0x00},
+    {0xfe, 0xc0, 0xc0, 0xfc, 0x06, 0xc6, 0x7c, 0x00},
+    {0x38, 0x60, 0xc0, 0xfc, 0xc6, 0xc6, 0x7c, 0x00},
+    {0xfe, 0xc6, 0x0c, 0x18, 0x30, 0x30, 0x30, 0x00},
+    {0x7c, 0xc6, 0xc6, 0x7c, 0xc6, 0xc6, 0x7c, 0x00},
+    {0x7c, 0xc6, 0xc6, 0x7e, 0x06, 0x0c, 0x78, 0x00},
+    {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00},
+    {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30},
+    {0x06, 0x0c, 0x18, 0x30, 0x18, 0x0c, 0x06, 0x00},
+    {0x00, 0x00, 0x7e, 0x00, 0x00, 0x7e, 0x00, 0x00},
+    {0x60, 0x30, 0x18, 0x0c, 0x18, 0x30, 0x60, 0x00},
+    {0x7c, 0xc6, 0x0c, 0x18, 0x18, 0x00, 0x18, 0x00},
+    {0x7c, 0xc6, 0xde, 0xde, 0xde, 0xc0, 0x78, 0x00},
+    {0x38, 0x6c, 0xc6, 0xfe, 0xc6, 0xc6, 0xc6, 0x00},
+    {0xfc, 0x66, 0x66, 0x7c, 0x66, 0x66, 0xfc, 0x00},
+    {0x3c, 0x66, 0xc0, 0xc0, 0xc0, 0x66, 0x3c, 0x00},
+    {0xf8, 0x6c, 0x66, 0x66, 0x66, 0x6c, 0xf8, 0x00},
+    {0xfe, 0x62, 0x68, 0x78, 0x68, 0x62, 0xfe, 0x00},
+    {0xfe, 0x62, 0x68, 0x78, 0x68, 0x60, 0xf0, 0x00},
+    {0x3c, 0x66, 0xc0, 0xc0, 0xce, 0x66, 0x3a, 0x00},
+    {0xc6, 0xc6, 0xc6, 0xfe, 0xc6, 0xc6, 0xc6, 0x00},
+    {0x3c, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, 0x00},
+    {0x1e, 0x0c, 0x0c, 0x0c, 0xcc, 0xcc, 0x78, 0x00},
+    {0xe6, 0x66, 0x6c, 0x78, 0x6c, 0x66, 0xe6, 0x00},
+    {0xf0, 0x60, 0x60, 0x60, 0x62, 0x66, 0xfe, 0x00},
+    {0xc6, 0xee, 0xfe, 0xfe, 0xd6, 0xc6, 0xc6, 0x00},
+    {0xc6, 0xe6, 0xf6, 0xde, 0xce, 0xc6, 0xc6, 0x00},
+    {0x7c, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
+    {0xfc, 0x66, 0x66, 0x7c, 0x60, 0x60, 0xf0, 0x00},
+    {0x7c, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0x7c, 0x0e},
+    {0xfc, 0x66, 0x66, 0x7c, 0x6c, 0x66, 0xe6, 0x00},
+    {0x3c, 0x66, 0x30, 0x18, 0x0c, 0x66, 0x3c, 0x00},
+    {0x7e, 0x7e, 0x5a, 0x18, 0x18, 0x18, 0x3c, 0x00},
+    {0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
+    {0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x6c, 0x38, 0x00},
+    {0xc6, 0xc6, 0xc6, 0xd6, 0xd6, 0xfe, 0x6c, 0x00},
+    {0xc6, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0xc6, 0x00},
+    {0x66, 0x66, 0x66, 0x3c, 0x18, 0x18, 0x3c, 0x00},
+    {0xfe, 0xc6, 0x8c, 0x18, 0x32, 0x66, 0xfe, 0x00},
+    {0x3c, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3c, 0x00},
+    {0xc0, 0x60, 0x30, 0x18, 0x0c, 0x06, 0x02, 0x00},
+    {0x3c, 0x0c, 0x0c, 0x0c, 0x0c, 0x0c, 0x3c, 0x00},
+    {0x10, 0x38, 0x6c, 0xc6, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff},
+    {0x30, 0x18, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x00, 0x78, 0x0c, 0x7c, 0xcc, 0x76, 0x00},
+    {0xe0, 0x60, 0x7c, 0x66, 0x66, 0x66, 0xdc, 0x00},
+    {0x00, 0x00, 0x7c, 0xc6, 0xc0, 0xc6, 0x7c, 0x00},
+    {0x1c, 0x0c, 0x7c, 0xcc, 0xcc, 0xcc, 0x76, 0x00},
+    {0x00, 0x00, 0x7c, 0xc6, 0xfe, 0xc0, 0x7c, 0x00},
+    {0x3c, 0x66, 0x60, 0xf8, 0x60, 0x60, 0xf0, 0x00},
+    {0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0xf8},
+    {0xe0, 0x60, 0x6c, 0x76, 0x66, 0x66, 0xe6, 0x00},
+    {0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3c, 0x00},
+    {0x06, 0x00, 0x06, 0x06, 0x06, 0x66, 0x66, 0x3c},
+    {0xe0, 0x60, 0x66, 0x6c, 0x78, 0x6c, 0xe6, 0x00},
+    {0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, 0x00},
+    {0x00, 0x00, 0xec, 0xfe, 0xd6, 0xd6, 0xd6, 0x00},
+    {0x00, 0x00, 0xdc, 0x66, 0x66, 0x66, 0x66, 0x00},
+    {0x00, 0x00, 0x7c, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
+    {0x00, 0x00, 0xdc, 0x66, 0x66, 0x7c, 0x60, 0xf0},
+    {0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0x1e},
+    {0x00, 0x00, 0xdc, 0x76, 0x60, 0x60, 0xf0, 0x00},
+    {0x00, 0x00, 0x7e, 0xc0, 0x7c, 0x06, 0xfc, 0x00},
+    {0x30, 0x30, 0xfc, 0x30, 0x30, 0x36, 0x1c, 0x00},
+    {0x00, 0x00, 0xcc, 0xcc, 0xcc, 0xcc, 0x76, 0x00},
+    {0x00, 0x00, 0xc6, 0xc6, 0xc6, 0x6c, 0x38, 0x00},
+    {0x00, 0x00, 0xc6, 0xd6, 0xd6, 0xfe, 0x6c, 0x00},
+    {0x00, 0x00, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0x00},
+    {0x00, 0x00, 0xc6, 0xc6, 0xc6, 0x7e, 0x06, 0xfc},
+    {0x00, 0x00, 0x7e, 0x4c, 0x18, 0x32, 0x7e, 0x00},
+    {0x0e, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0e, 0x00},
+    {0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00},
+    {0x70, 0x18, 0x18, 0x0e, 0x18, 0x18, 0x70, 0x00},
+    {0x76, 0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+    {0x00, 0x10, 0x38, 0x6c, 0xc6, 0xc6, 0xfe, 0x00}
+};
 
 static C3D_Tex s_boxartTex;
 static bool s_boxartLoaded = false;
@@ -50,17 +184,183 @@ static float s_glyphWidth[256];
 static float s_glyphAdvance[256];
 
 static BottomRightMode s_brMode = BR_MODE_PREVIEW;
+static int s_rightPanelCursor = 0;
 
-void uiSetBottomRightMode(BottomRightMode mode) {
-    s_brMode = mode;
+void uiSetBottomRightMode(int mode) {
+    if(mode < 0) mode = 0;
+    else if(mode > 2) mode = 2;
+    s_brMode = (BottomRightMode)mode;
 }
 
-BottomRightMode uiGetBottomRightMode() {
-    return s_brMode;
+int uiGetBottomRightMode() {
+    return (int)s_brMode;
 }
 
-void uiCycleBottomRightMode() {
-    s_brMode = (BottomRightMode)((s_brMode + 1) % 3);
+void uiCycleBottomRightMode(int dir) {
+    if(dir >= 0) {
+        s_brMode = (BottomRightMode)((s_brMode + 1) % 3);
+    } else {
+        s_brMode = (BottomRightMode)((s_brMode + 2) % 3);
+    }
+}
+
+int uiGetRightPanelCursor() {
+    return s_rightPanelCursor;
+}
+
+void uiMoveRightPanelCursor(int delta) {
+    s_rightPanelCursor = (s_rightPanelCursor + delta) % 3;
+    if(s_rightPanelCursor < 0) {
+        s_rightPanelCursor += 3;
+    }
+}
+
+void uiAdjustRightPanelOption(int dir) {
+    if(s_brMode == BR_MODE_DISPLAY) {
+        if(s_rightPanelCursor == 0) {
+            int val = getMenuOption("Scaling");
+            val = (val + dir + 5) % 5;
+            setMenuOption("Scaling", val);
+        } else if(s_rightPanelCursor == 1) {
+            int val = getMenuOption("Scale Filter");
+            val = (val + dir + 3) % 3;
+            setMenuOption("Scale Filter", val);
+        } else if(s_rightPanelCursor == 2) {
+            int val = getMenuOption("LCD Grid") ^ 1;
+            setMenuOption("LCD Grid", val);
+        }
+    } else if(s_brMode == BR_MODE_PALETTE) {
+        if(s_rightPanelCursor == 0) {
+            gbColorizeMode = (gbColorizeMode + dir + 14) % 14;
+            mgrRefreshPalette();
+        } else if(s_rightPanelCursor == 1) {
+            int val = getMenuOption("CGB Colors") ^ 1;
+            setMenuOption("CGB Colors", val);
+        } else if(s_rightPanelCursor == 2) {
+            int val = getMenuOption("Master") ^ 1;
+            setMenuOption("Master", val);
+        }
+    }
+}
+
+struct CachedRomEntry {
+    RomMetadata meta;
+    uint16_t savestateMask;
+    bool hasSram;
+    std::vector<u32> boxartPixels128;
+    bool boxartChecked;
+
+    CachedRomEntry() : savestateMask(0), hasSram(false), boxartChecked(false) {}
+};
+
+static std::unordered_map<std::string, CachedRomEntry> s_romCache;
+static std::deque<std::string> s_romCacheOrder;
+static std::string s_lastSelectedRomPath = "";
+
+static void addOrUpdateRomCache(const std::string& path, const CachedRomEntry& entry) {
+    auto it = s_romCache.find(path);
+    if(it == s_romCache.end()) {
+        while(s_romCache.size() >= 32 && !s_romCacheOrder.empty()) {
+            std::string oldest = s_romCacheOrder.front();
+            s_romCacheOrder.pop_front();
+            s_romCache.erase(oldest);
+        }
+        s_romCacheOrder.push_back(path);
+    }
+    s_romCache[path] = entry;
+}
+
+static void touchRomCache(const std::string& path) {
+    for(auto it = s_romCacheOrder.begin(); it != s_romCacheOrder.end(); ++it) {
+        if(*it == path) {
+            s_romCacheOrder.erase(it);
+            s_romCacheOrder.push_back(path);
+            break;
+        }
+    }
+}
+
+void uiInvalidateRomCache(const std::string& romPath) {
+    if(!romPath.empty()) {
+        s_romCache.erase(romPath);
+        for(auto it = s_romCacheOrder.begin(); it != s_romCacheOrder.end(); ++it) {
+            if(*it == romPath) {
+                s_romCacheOrder.erase(it);
+                break;
+            }
+        }
+    } else {
+        if(!s_lastSelectedRomPath.empty()) {
+            s_romCache.erase(s_lastSelectedRomPath);
+            for(auto it = s_romCacheOrder.begin(); it != s_romCacheOrder.end(); ++it) {
+                if(*it == s_lastSelectedRomPath) {
+                    s_romCacheOrder.erase(it);
+                    break;
+                }
+            }
+        }
+    }
+}
+
+static std::vector<std::string> s_boxartFilesCache;
+static LightLock s_boxartCacheLock;
+static bool s_boxartCacheLockInit = false;
+
+void uiAddBoxartFileToCache(const std::string& filename) {
+    if(!s_boxartCacheLockInit) {
+        return;
+    }
+    std::string base = filename;
+    auto slash = base.find_last_of("/\\");
+    if(slash != std::string::npos) {
+        base = base.substr(slash + 1);
+    }
+    LightLock_Lock(&s_boxartCacheLock);
+    bool exists = false;
+    for(const auto& f : s_boxartFilesCache) {
+        if(strcasecmp(f.c_str(), base.c_str()) == 0) {
+            exists = true;
+            break;
+        }
+    }
+    if(!exists) {
+        s_boxartFilesCache.push_back(base);
+    }
+    LightLock_Unlock(&s_boxartCacheLock);
+}
+
+static bool boxartInCache(const std::string& name) {
+    if(!s_boxartCacheLockInit) {
+        return false;
+    }
+    LightLock_Lock(&s_boxartCacheLock);
+    for(const auto& fname : s_boxartFilesCache) {
+        if(strcasecmp(fname.c_str(), name.c_str()) == 0) {
+            LightLock_Unlock(&s_boxartCacheLock);
+            return true;
+        }
+    }
+    LightLock_Unlock(&s_boxartCacheLock);
+    return false;
+}
+
+static std::string findBoxartPrefixMatch(const std::string& prefix) {
+    if(prefix.length() < 4 || !s_boxartCacheLockInit) {
+        return "";
+    }
+    size_t cmpLen = std::min((size_t)6, prefix.length());
+    LightLock_Lock(&s_boxartCacheLock);
+    for(const auto& fname : s_boxartFilesCache) {
+        if(fname.length() >= 4 && strcasecmp(fname.substr(fname.length() - 4).c_str(), ".png") == 0) {
+            if(fname.length() >= cmpLen && strncasecmp(fname.c_str(), prefix.c_str(), cmpLen) == 0) {
+                std::string match = "/3ds/gameyob/boxart/" + fname;
+                LightLock_Unlock(&s_boxartCacheLock);
+                return match;
+            }
+        }
+    }
+    LightLock_Unlock(&s_boxartCacheLock);
+    return "";
 }
 
 static inline void emitUiQuad(float x1, float y1, float x2, float y2, float u1, float v1, float u2, float v2) {
@@ -88,11 +388,153 @@ void uiRenderInit() {
         return;
     }
 
-    memcpy(temp, s_fontAtlasPixels, sizeof(s_fontAtlasPixels));
+    memset(temp, 0, 256 * 256 * sizeof(u32));
 
-    for(int i = 0; i < 256; i++) {
-        s_glyphWidth[i] = s_ttfGlyphWidth[i];
-        s_glyphAdvance[i] = s_ttfGlyphAdvance[i];
+    // Tabla extendida de 256 glifos (128 ASCII nativos 8x8 + caracteres especiales)
+    u8 s_fontBitmap8x8[256][8];
+    memset(s_fontBitmap8x8, 0, sizeof(s_fontBitmap8x8));
+
+    for(int i = 0; i < 128; i++) {
+        memcpy(s_fontBitmap8x8[i], font8x8_basic[i], 8);
+    }
+
+    // Caracteres estrechos optimizados a 1:1 para tipografía compacta y nítida
+    static const u8 font_i[8]   = {0x00, 0x18, 0x00, 0x18, 0x18, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['i'], font_i, 8);
+    static const u8 font_l[8]   = {0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['l'], font_l, 8);
+    static const u8 font_1[8]   = {0x08, 0x18, 0x08, 0x08, 0x08, 0x08, 0x1C, 0x00}; memcpy(s_fontBitmap8x8['1'], font_1, 8);
+    static const u8 font_dot[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['.'], font_dot, 8);
+    static const u8 font_col[8] = {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8[':'], font_col, 8);
+
+    // Glifos simétricos 8x8 optimizados
+    static const u8 font_V[8] = { 0x82, 0x82, 0x44, 0x44, 0x28, 0x28, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['V'], font_V, 8);
+    static const u8 font_v[8] = { 0x00, 0x00, 0x82, 0x44, 0x44, 0x28, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['v'], font_v, 8);
+    static const u8 font_X[8] = { 0x82, 0x44, 0x28, 0x10, 0x28, 0x44, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['X'], font_X, 8);
+    static const u8 font_x[8] = { 0x00, 0x00, 0x82, 0x44, 0x28, 0x10, 0x28, 0x44 }; memcpy(s_fontBitmap8x8['x'], font_x, 8);
+    static const u8 font_M[8] = { 0x82, 0xC6, 0xAA, 0x92, 0x82, 0x82, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['M'], font_M, 8);
+    static const u8 font_W[8] = { 0x82, 0x82, 0x82, 0x92, 0xAA, 0xC6, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['W'], font_W, 8);
+    static const u8 font_T[8] = { 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['T'], font_T, 8);
+    static const u8 font_S[8] = { 0x3C, 0x42, 0x38, 0x04, 0x42, 0x3C, 0x00, 0x00 }; memcpy(s_fontBitmap8x8['S'], font_S, 8);
+
+    // Acentos españoles minúsculas (tilde aguda en filas 0..1 + cuerpo base)
+    memcpy(s_fontBitmap8x8[0xE1], font8x8_basic['a'], 8); s_fontBitmap8x8[0xE1][0] = 0x0C; s_fontBitmap8x8[0xE1][1] = 0x18;
+    memcpy(s_fontBitmap8x8[0xE9], font8x8_basic['e'], 8); s_fontBitmap8x8[0xE9][0] = 0x0C; s_fontBitmap8x8[0xE9][1] = 0x18;
+    memcpy(s_fontBitmap8x8[0xED], font_i, 8);             s_fontBitmap8x8[0xED][0] = 0x0C; s_fontBitmap8x8[0xED][1] = 0x18;
+    memcpy(s_fontBitmap8x8[0xF3], font8x8_basic['o'], 8); s_fontBitmap8x8[0xF3][0] = 0x0C; s_fontBitmap8x8[0xF3][1] = 0x18;
+    memcpy(s_fontBitmap8x8[0xFA], font8x8_basic['u'], 8); s_fontBitmap8x8[0xFA][0] = 0x0C; s_fontBitmap8x8[0xFA][1] = 0x18;
+    memcpy(s_fontBitmap8x8[0xF1], font8x8_basic['n'], 8); s_fontBitmap8x8[0xF1][0] = 0x76; s_fontBitmap8x8[0xF1][1] = 0x00;
+
+    // Acentos españoles mayúsculas
+    memcpy(s_fontBitmap8x8[0xC1], font8x8_basic['A'], 8);
+    memcpy(s_fontBitmap8x8[0xC9], s_fontBitmap8x8['E'], 8);
+    memcpy(s_fontBitmap8x8[0xCD], font8x8_basic['I'], 8);
+    memcpy(s_fontBitmap8x8[0xD3], font8x8_basic['O'], 8);
+    memcpy(s_fontBitmap8x8[0xDA], font8x8_basic['U'], 8);
+    memcpy(s_fontBitmap8x8[0xD1], font8x8_basic['N'], 8);
+
+    // Símbolos especiales
+    static const u8 bullet[8]  = {0x00, 0x00, 0x18, 0x3C, 0x3C, 0x18, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x80], bullet, 8);
+    static const u8 rarrow[8]  = {0x00, 0x60, 0x78, 0x7E, 0x78, 0x60, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x81], rarrow, 8);
+    static const u8 larrow[8]  = {0x00, 0x06, 0x1E, 0x7E, 0x1E, 0x06, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x82], larrow, 8);
+    static const u8 uarrow[8]  = {0x00, 0x18, 0x3C, 0x7E, 0xFF, 0x00, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x83], uarrow, 8);
+    static const u8 darrow[8]  = {0x00, 0x00, 0xFF, 0x7E, 0x3C, 0x18, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x84], darrow, 8);
+    static const u8 star[8]    = {0x10, 0x38, 0xFE, 0x7C, 0x38, 0x6C, 0xC6, 0x00}; memcpy(s_fontBitmap8x8[0x85], star, 8);
+    static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(s_fontBitmap8x8[0xA1], invExc, 8);
+    static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(s_fontBitmap8x8[0xBF], invQst, 8);
+
+    u32 shadowCol = uiColorRGBA(0, 0, 0, 125);
+
+    for(int c = 0; c < 256; c++) {
+        int cellCol = c & 0x0F;
+        int cellRow = (c >> 4) & 0x0F;
+        int cellX = cellCol * 16;
+        int cellY = cellRow * 16;
+
+        int minCol = 8;
+        int maxCol = -1;
+        for(int y = 0; y < 8; y++) {
+            u8 row = s_fontBitmap8x8[c][y];
+            if(row != 0) {
+                for(int x = 0; x < 8; x++) {
+                    if(row & (0x80 >> x)) {
+                        if(x < minCol) minCol = x;
+                        if(x > maxCol) maxCol = x;
+                    }
+                }
+            }
+        }
+
+        if(maxCol < 0 || c == ' ') {
+            s_glyphWidth[c] = 0.0f;
+            s_glyphAdvance[c] = (c == ' ') ? 4.0f : 2.0f;
+            continue;
+        }
+
+        int activeW = maxCol - minCol + 1;
+        s_glyphWidth[c] = (float)(activeW + 1);
+        s_glyphAdvance[c] = (float)(activeW + 1);
+
+        // Paso 1: Pintar los píxeles activos del glifo con un sutil gradiente vertical de luminancia
+        for(int r = 0; r < 8; r++) {
+            u32 glyphCol;
+            if(r <= 2) {
+                glyphCol = uiColorRGBA(255, 255, 255, 255);
+            } else if(r <= 4) {
+                glyphCol = uiColorRGBA(246, 249, 255, 255);
+            } else {
+                glyphCol = uiColorRGBA(232, 238, 250, 255);
+            }
+
+            for(int col = minCol; col <= maxCol; col++) {
+                if((s_fontBitmap8x8[c][r] >> (7 - col)) & 1) {
+                    int px = cellX + 1 + (col - minCol);
+                    int py = cellY + 1 + r;
+                    temp[py * 256 + px] = glyphCol;
+                }
+            }
+        }
+
+        // Paso 2 (Suavizado EXCLUSIVO de peldaños diagonales exteriores - CERO engrosamiento de trazos y CERO cierre de huecos internos):
+        for(int r = 0; r < 8; r++) {
+            for(int col = minCol; col <= maxCol; col++) {
+                if(!((s_fontBitmap8x8[c][r] >> (7 - col)) & 1)) {
+                    bool U = (r > 0) && ((s_fontBitmap8x8[c][r - 1] >> (7 - col)) & 1);
+                    bool D = (r < 7) && ((s_fontBitmap8x8[c][r + 1] >> (7 - col)) & 1);
+                    bool L = (col > minCol) && ((s_fontBitmap8x8[c][r] >> (7 - (col - 1))) & 1);
+                    bool R = (col < maxCol) && ((s_fontBitmap8x8[c][r] >> (7 - (col + 1))) & 1);
+                    int orthoCount = (int)U + (int)D + (int)L + (int)R;
+
+                    if(orthoCount == 2) {
+                        bool isDiagStep = false;
+                        if(U && L && !((s_fontBitmap8x8[c][r - 1] >> (7 - (col - 1))) & 1)) isDiagStep = true;
+                        if(U && R && !((s_fontBitmap8x8[c][r - 1] >> (7 - (col + 1))) & 1)) isDiagStep = true;
+                        if(D && L && !((s_fontBitmap8x8[c][r + 1] >> (7 - (col - 1))) & 1)) isDiagStep = true;
+                        if(D && R && !((s_fontBitmap8x8[c][r + 1] >> (7 - (col + 1))) & 1)) isDiagStep = true;
+                        if(isDiagStep) {
+                            int px = cellX + 1 + (col - minCol);
+                            int py = cellY + 1 + r;
+                            temp[py * 256 + px] = 0x58FFFFFF; // Blanco suave (alpha = 88) en el escalón diagonal
+                        }
+                    }
+                }
+            }
+        }
+
+        // Paso 3: Pintar la sombra en (px + 1, py + 1) con RGBA(0, 0, 0, 125) solo donde el destino esté completamente vacío (0)
+        for(int r = 0; r < 8; r++) {
+            for(int col = minCol; col <= maxCol; col++) {
+                int px = cellX + 1 + (col - minCol);
+                int py = cellY + 1 + r;
+                if(temp[py * 256 + px] != 0 && temp[py * 256 + px] != shadowCol) {
+                    int spx = px + 1;
+                    int spy = py + 1;
+                    if(spx < 256 && spy < 256) {
+                        if(temp[spy * 256 + spx] == 0) {
+                            temp[spy * 256 + spx] = shadowCol;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     GSPGPU_FlushDataCache(temp, 256 * 256 * sizeof(u32));
@@ -123,6 +565,25 @@ void uiRenderInit() {
     mkdir("/3ds", 0777);
     mkdir("/3ds/gameyob", 0777);
     mkdir("/3ds/gameyob/boxart", 0777);
+
+    // Cargar índice de carátulas en RAM una sola vez
+    if(!s_boxartCacheLockInit) {
+        LightLock_Init(&s_boxartCacheLock);
+        s_boxartCacheLockInit = true;
+    }
+    LightLock_Lock(&s_boxartCacheLock);
+    s_boxartFilesCache.clear();
+    DIR* d = opendir("/3ds/gameyob/boxart");
+    if(d != nullptr) {
+        struct dirent* ent;
+        while((ent = readdir(d)) != nullptr) {
+            if(ent->d_name[0] != '.') {
+                s_boxartFilesCache.push_back(ent->d_name);
+            }
+        }
+        closedir(d);
+    }
+    LightLock_Unlock(&s_boxartCacheLock);
 }
 
 static bool s_ptmuInitialized = false;
@@ -163,6 +624,13 @@ void uiRenderExit() {
         s_boxartLoaded = false;
         s_lastBoxartPath = "";
         s_boxartChecked = false;
+    }
+    s_romCache.clear();
+    s_romCacheOrder.clear();
+    if(s_boxartCacheLockInit) {
+        LightLock_Lock(&s_boxartCacheLock);
+        s_boxartFilesCache.clear();
+        LightLock_Unlock(&s_boxartCacheLock);
     }
 }
 
@@ -495,17 +963,17 @@ static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scal
 
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
-    float gh = 14.0f;
+    int gh = 9; // 8px de alto + 1px de sombra
 
     float u0 = (float)(cellX + 1) / 256.0f;
     float u1 = (float)(cellX + 1 + gw) / 256.0f;
-    float v0 = (float)cellY / 256.0f;
-    float v1 = (float)(cellY + 14) / 256.0f;
+    float v0 = (float)(cellY + 1) / 256.0f;
+    float v1 = (float)(cellY + 1 + gh) / 256.0f;
 
     float x0 = floorf(penX + 0.5f);
     float x1 = floorf(penX + (gw * scaleX) + 0.5f);
     float y0 = floorf(penY + 0.5f);
-    float y1 = floorf(penY + (gh * scaleY) + 0.5f);
+    float y1 = floorf(penY + ((float)gh * scaleY) + 0.5f);
 
     // Manejo seguro del color en formato GPU Citro3D
     if((color & 0xFF000000) == 0) {
@@ -555,7 +1023,7 @@ void uiDrawTextScaled(float x, float y, float scale, const char* text, u32 color
     while(*text != '\0') {
         if(*text == '\n') {
             penX = x;
-            penY += floorf(14.0f * scale + 0.5f);
+            penY += floorf(12.0f * scale + 0.5f);
             text++;
             continue;
         }
@@ -765,30 +1233,6 @@ static bool fileExists(const std::string& path) {
     return false;
 }
 
-static std::string findBoxartPrefixMatch(const std::string& prefix) {
-    if(prefix.length() < 4) {
-        return "";
-    }
-    DIR* d = opendir("/3ds/gameyob/boxart");
-    if(d == nullptr) {
-        return "";
-    }
-    std::string match = "";
-    struct dirent* ent;
-    size_t cmpLen = std::min((size_t)6, prefix.length());
-    while((ent = readdir(d)) != nullptr) {
-        std::string fname = ent->d_name;
-        if(fname.length() >= 4 && strcasecmp(fname.substr(fname.length() - 4).c_str(), ".png") == 0) {
-            if(fname.length() >= cmpLen && strncasecmp(fname.c_str(), prefix.c_str(), cmpLen) == 0) {
-                match = "/3ds/gameyob/boxart/" + fname;
-                break;
-            }
-        }
-    }
-    closedir(d);
-    return match;
-}
-
 void uiInvalidateBoxart() {
     s_lastBoxartPath = "";
     s_boxartLoaded = false;
@@ -797,7 +1241,7 @@ void uiInvalidateBoxart() {
     s_lastMetaRom = "";
 }
 
-void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC) {
+void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC, CachedRomEntry* outCacheEntry) {
     (void) mbcType;
     if(romPath == nullptr || romPath[0] == '\0') {
         uiInvalidateBoxart();
@@ -807,6 +1251,13 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
     std::string pathStr = romPath;
     s_lastBoxartPath = pathStr;
     s_isGBCBox = isGBC;
+
+    if(outCacheEntry == nullptr) {
+        auto it = s_romCache.find(pathStr);
+        if(it != s_romCache.end()) {
+            outCacheEntry = &it->second;
+        }
+    }
 
     std::string romBaseName = pathStr;
     auto slash = romBaseName.find_last_of("/\\");
@@ -830,19 +1281,17 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
         cleanTitle.pop_back();
     }
 
-    // Búsqueda local flexible en 5 niveles:
+    // Búsqueda en 0 ms usando el índice en RAM s_boxartFilesCache:
     std::string cand1 = romPathSinExt + ".png";
-    std::string cand2 = "/3ds/gameyob/boxart/" + romBaseName + ".png";
-    std::string cand3 = cleanTitle.empty() ? "" : ("/3ds/gameyob/boxart/" + cleanTitle + ".png");
     std::string cand4 = romDir + "boxart/" + romBaseName + ".png";
 
     std::string targetPath = "";
-    if(fileExists(cand1)) {
+    if(boxartInCache(romBaseName + ".png")) {
+        targetPath = "/3ds/gameyob/boxart/" + romBaseName + ".png";
+    } else if(!cleanTitle.empty() && boxartInCache(cleanTitle + ".png")) {
+        targetPath = "/3ds/gameyob/boxart/" + cleanTitle + ".png";
+    } else if(fileExists(cand1)) {
         targetPath = cand1;
-    } else if(fileExists(cand2)) {
-        targetPath = cand2;
-    } else if(!cand3.empty() && fileExists(cand3)) {
-        targetPath = cand3;
     } else if(fileExists(cand4)) {
         targetPath = cand4;
     } else {
@@ -874,6 +1323,10 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
                     }
                 }
 
+                if(outCacheEntry != nullptr) {
+                    outCacheEntry->boxartPixels128.assign(temp, temp + (128 * 128));
+                }
+
                 GSPGPU_FlushDataCache(temp, 128 * 128 * sizeof(u32));
                 C3D_SyncDisplayTransfer(
                     temp, GX_BUFFER_DIM(128, 128),
@@ -892,12 +1345,17 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
 
     s_boxartLoaded = loaded;
     s_boxartChecked = true;
+    if(outCacheEntry != nullptr) {
+        if(!loaded) {
+            outCacheEntry->boxartPixels128.clear();
+        }
+        outCacheEntry->boxartChecked = true;
+    }
     if(!s_boxartLoaded) {
         scraperEnqueue(pathStr, cleanTitle, 0);
     }
 }
 
-static std::string s_lastSelectedRomPath = "";
 static u64 s_menuSelectionChangeTime = 0;
 static bool s_menuSelectionDebouncing = false;
 
@@ -935,14 +1393,66 @@ void uiUpdateMenuState() {
 
     u64 now = osGetTime();
 
+    if(!currentPath.empty() && scraperCheckCoverReady(currentPath)) {
+        uiInvalidateRomCache(currentPath);
+        s_lastSelectedRomPath = "";
+    }
+
     if(currentPath != s_lastSelectedRomPath) {
         s_lastSelectedRomPath = currentPath;
         s_menuSelectionChangeTime = now;
-        s_menuSelectionDebouncing = true;
-        // Mantener la carátula y metadatos previos visibles durante el debounce para evitar parpadeos negros
+
+        if(!currentPath.empty() && !isDir) {
+            auto it = s_romCache.find(currentPath);
+            if(it != s_romCache.end()) {
+                // ROM en caché: Cargar metadatos y textura en 0 ms SIN debounce
+                s_menuSelectionDebouncing = false;
+                touchRomCache(currentPath);
+
+                s_currentMeta = it->second.meta;
+                s_metaLoaded = true;
+                s_lastMetaRom = currentPath;
+                s_isGBCBox = s_currentMeta.isGBC;
+
+                if(!it->second.boxartPixels128.empty()) {
+                    if(s_boxartTexAllocated) {
+                        u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
+                        if(temp != nullptr) {
+                            memcpy(temp, it->second.boxartPixels128.data(), 128 * 128 * sizeof(u32));
+                            GSPGPU_FlushDataCache(temp, 128 * 128 * sizeof(u32));
+                            C3D_SyncDisplayTransfer(
+                                temp, GX_BUFFER_DIM(128, 128),
+                                (u32*) s_boxartTex.data, GX_BUFFER_DIM(128, 128),
+                                GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
+                                GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
+                                GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
+                            );
+                            linearFree(temp);
+                            GSPGPU_InvalidateDataCache(s_boxartTex.data, s_boxartTex.size);
+                            s_boxartLoaded = true;
+                            s_boxartChecked = true;
+                            s_lastBoxartPath = currentPath;
+                        }
+                    }
+                } else if(it->second.boxartChecked) {
+                    s_boxartLoaded = false;
+                    s_boxartChecked = true;
+                    s_lastBoxartPath = currentPath;
+                } else {
+                    CachedRomEntry& entry = it->second;
+                    uiUpdateBoxart(currentPath.c_str(), s_currentMeta.title.c_str(), 0, s_isGBCBox, &entry);
+                }
+            } else {
+                s_menuSelectionDebouncing = true;
+            }
+        } else {
+            s_menuSelectionDebouncing = false;
+            s_metaLoaded = false;
+            s_boxartLoaded = false;
+        }
     }
 
-    if(s_menuSelectionDebouncing && (now - s_menuSelectionChangeTime >= 120)) {
+    if(s_menuSelectionDebouncing && (now - s_menuSelectionChangeTime >= 45)) {
         s_menuSelectionDebouncing = false;
         if(!currentPath.empty() && !isDir) {
             s_metaLoaded = fetchRomMetadata(currentPath, s_currentMeta);
@@ -952,7 +1462,25 @@ void uiUpdateMenuState() {
             } else {
                 s_isGBCBox = isGBC;
             }
-            uiUpdateBoxart(currentPath.c_str(), s_metaLoaded ? s_currentMeta.title.c_str() : nullptr, 0, s_isGBCBox);
+
+            CachedRomEntry entry;
+            entry.meta = s_currentMeta;
+
+            uint16_t mask = 0;
+            struct stat st;
+            for(int s = 0; s < 10; s++) {
+                std::string sf = currentPath + ".ys" + std::to_string(s);
+                if(stat(sf.c_str(), &st) == 0 && st.st_size > 0) {
+                    mask |= (1 << s);
+                }
+            }
+            entry.savestateMask = mask;
+            std::string savFile = currentPath + ".sav";
+            entry.hasSram = (stat(savFile.c_str(), &st) == 0 && st.st_size > 0);
+
+            uiUpdateBoxart(currentPath.c_str(), s_metaLoaded ? s_currentMeta.title.c_str() : nullptr, 0, s_isGBCBox, &entry);
+
+            addOrUpdateRomCache(currentPath, entry);
         } else {
             s_metaLoaded = false;
             s_boxartLoaded = false;
@@ -1778,6 +2306,7 @@ bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser
     } else if(s_brMode == BR_MODE_DISPLAY) {
         // Fila 1: Escalado (y: 46..64)
         if(py >= 46 && py <= 64) {
+            s_rightPanelCursor = 0;
             int val = getMenuOption("Scaling");
             val = (val + 1) % 5;
             setMenuOption("Scaling", val);
@@ -1785,6 +2314,7 @@ bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser
         }
         // Fila 2: Filtro (y: 66..84)
         if(py >= 66 && py <= 84) {
+            s_rightPanelCursor = 1;
             int val = getMenuOption("Scale Filter");
             val = (val + 1) % 3;
             setMenuOption("Scale Filter", val);
@@ -1792,12 +2322,14 @@ bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser
         }
         // Fila 3: Rejilla LCD (y: 86..106)
         if(py >= 86 && py <= 106) {
+            s_rightPanelCursor = 2;
             int val = getMenuOption("LCD Grid") ^ 1;
             setMenuOption("LCD Grid", val);
             return false;
         }
-        // Tap en caja informativa (y: 116..196): ciclar filtro
-        if(py >= 116 && py <= 196) {
+        // Tap en caja informativa (y: 114..190): ciclar filtro
+        if(py >= 114 && py <= 190) {
+            s_rightPanelCursor = 1;
             int val = getMenuOption("Scale Filter");
             val = (val + 1) % 3;
             setMenuOption("Scale Filter", val);
@@ -1806,24 +2338,28 @@ bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser
     } else if(s_brMode == BR_MODE_PALETTE) {
         // Fila 1: Paleta DMG (y: 46..64)
         if(py >= 46 && py <= 64) {
+            s_rightPanelCursor = 0;
             gbColorizeMode = (gbColorizeMode + 1) % 14;
             mgrRefreshPalette();
             return false;
         }
         // Fila 2: Color GBC (y: 66..84)
         if(py >= 66 && py <= 84) {
+            s_rightPanelCursor = 1;
             int val = getMenuOption("CGB Colors") ^ 1;
             setMenuOption("CGB Colors", val);
             return false;
         }
         // Fila 3: Sonido GB (y: 86..106)
         if(py >= 86 && py <= 106) {
+            s_rightPanelCursor = 2;
             int val = getMenuOption("Master") ^ 1;
             setMenuOption("Master", val);
             return false;
         }
-        // Swatches (y: 116..140) o Botón [ Cambiar Paleta ] (y: 150..186)
-        if(py >= 116 && py <= 186) {
+        // Swatches (y: 114..136) o Botón [ Cambiar Paleta ] (y: 146..180)
+        if(py >= 114 && py <= 180) {
+            s_rightPanelCursor = 0;
             mgrCyclePalette();
             return false;
         }
@@ -1975,16 +2511,22 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
     bool hasState = false;
     bool hasSav = false;
-    struct stat stState;
-    struct stat stSav;
     if(!currentSelectedRom.empty() && !isCurrentDir) {
-        std::string stateFile = currentSelectedRom + ".ys" + std::to_string(s_previewSlot);
-        if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
-            hasState = true;
-        }
-        std::string savFile = currentSelectedRom + ".sav";
-        if(stat(savFile.c_str(), &stSav) == 0 && stSav.st_size > 0) {
-            hasSav = true;
+        auto it = s_romCache.find(currentSelectedRom);
+        if(it != s_romCache.end()) {
+            hasState = (it->second.savestateMask & (1 << s_previewSlot)) != 0;
+            hasSav = it->second.hasSram;
+        } else {
+            std::string stateFile = currentSelectedRom + ".ys" + std::to_string(s_previewSlot);
+            struct stat stState;
+            if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
+                hasState = true;
+            }
+            std::string savFile = currentSelectedRom + ".sav";
+            struct stat stSav;
+            if(stat(savFile.c_str(), &stSav) == 0 && stSav.st_size > 0) {
+                hasSav = true;
+            }
         }
     }
 
@@ -2059,35 +2601,43 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         uiDrawText(152.0f, 28.0f, "AJUSTES DE DISPLAY", colAmber);
         uiDrawRect(136.0f, 42.0f, 170.0f, 1.0f, colAmber);
 
+        // Barra de selección resaltada sobre la fila activa según s_rightPanelCursor
+        float selY = 48.0f + (float)s_rightPanelCursor * 20.0f;
+        uiDrawRect(134.0f, selY, 174.0f, 18.0f, uiColorRGBA(25, 75, 120, 160));
+        uiDrawRectOutline(134.0f, selY, 174.0f, 18.0f, 1.0f, colAmber);
+
         // Fila 1: Escalado (y: 52)
-        uiDrawText(138.0f, 52.0f, "• Escalado:", colWhite);
+        uiDrawText(138.0f, 52.0f, (s_rightPanelCursor == 0) ? "► Escalado:" : "• Escalado:", (s_rightPanelCursor == 0) ? colYellow : colWhite);
         static const char* scaleNames[5] = {"Off", "125%", "150%", "Aspect", "Full"};
         char v0[24];
         snprintf(v0, sizeof(v0), "< %s >", scaleNames[getMenuOption("Scaling") % 5]);
         uiDrawTextRight(300.0f, 52.0f, v0, colYellow);
 
         // Fila 2: Filtro (y: 72)
-        uiDrawText(138.0f, 72.0f, "• Filtro:", colWhite);
+        uiDrawText(138.0f, 72.0f, (s_rightPanelCursor == 1) ? "► Filtro:" : "• Filtro:", (s_rightPanelCursor == 1) ? colYellow : colWhite);
         static const char* filterNames[3] = {"Nearest", "Linear", "Sharp 2x"};
         char v1[24];
         snprintf(v1, sizeof(v1), "< %s >", filterNames[getMenuOption("Scale Filter") % 3]);
         uiDrawTextRight(300.0f, 72.0f, v1, colYellow);
 
         // Fila 3: Rejilla LCD (y: 92)
-        uiDrawText(138.0f, 92.0f, "• Rejilla LCD:", colWhite);
+        uiDrawText(138.0f, 92.0f, (s_rightPanelCursor == 2) ? "► Rejilla LCD:" : "• Rejilla LCD:", (s_rightPanelCursor == 2) ? colYellow : colWhite);
         const char* v2 = getMenuOption("LCD Grid") ? "< On >" : "< Off >";
         uiDrawTextRight(300.0f, 92.0f, v2, getMenuOption("LCD Grid") ? colGreen : colDarkGray);
 
-        // Caja Informativa Inferior (x: 136..306, y: 116..196)
-        uiDrawRoundedRect(136.0f, 116.0f, 170.0f, 80.0f, 3.0f, uiColorRGBA(12, 16, 24, 255), uiColorRGBA(35, 65, 95, 255), 1.0f);
-        uiDrawInfoBadge(142.0f, 124.0f);
+        // Caja Informativa Inferior (x: 136..306, y: 114..188)
+        uiDrawRoundedRect(136.0f, 114.0f, 170.0f, 74.0f, 3.0f, uiColorRGBA(12, 16, 24, 255), uiColorRGBA(35, 65, 95, 255), 1.0f);
+        uiDrawInfoBadge(142.0f, 120.0f);
         int curFilt = getMenuOption("Scale Filter") % 3;
         const char* filterTitle = (curFilt == 2) ? "SHARP BILINEAR" : (curFilt == 1 ? "FILTRO LINEAL" : "NEAREST PIXEL");
-        uiDrawText(156.0f, 124.0f, filterTitle, colCyan);
+        uiDrawText(156.0f, 120.0f, filterTitle, colCyan);
 
-        uiDrawText(142.0f, 140.0f, "Pixeles 100% nitidos sin", colWhite);
-        uiDrawText(142.0f, 154.0f, "parpadeos de camara", colWhite);
-        uiDrawText(142.0f, 168.0f, "(cero tirones de GPU)", colGray);
+        uiDrawText(142.0f, 136.0f, "Pixeles 100% nitidos sin", colWhite);
+        uiDrawText(142.0f, 150.0f, "parpadeos de camara", colWhite);
+        uiDrawText(142.0f, 164.0f, "(cero tirones de GPU)", colGray);
+
+        // Indicación sutil de navegación por botones
+        uiDrawTextCentered(221.0f, 194.0f, "[L/R] Cambiar Panel   [B] Volver a ROMs", colAmber);
 
     } else if(s_brMode == BR_MODE_PALETTE) {
         // ==========================================
@@ -2097,8 +2647,13 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         uiDrawText(154.0f, 28.0f, "PALETA Y SISTEMA", colAmber);
         uiDrawRect(136.0f, 42.0f, 170.0f, 1.0f, colAmber);
 
+        // Barra de selección resaltada sobre la fila activa según s_rightPanelCursor
+        float selY = 48.0f + (float)s_rightPanelCursor * 20.0f;
+        uiDrawRect(134.0f, selY, 174.0f, 18.0f, uiColorRGBA(85, 50, 15, 160));
+        uiDrawRectOutline(134.0f, selY, 174.0f, 18.0f, 1.0f, colAmber);
+
         // Fila 1: Paleta DMG (y: 52)
-        uiDrawText(138.0f, 52.0f, "• Paleta DMG:", colWhite);
+        uiDrawText(138.0f, 52.0f, (s_rightPanelCursor == 0) ? "► Paleta DMG:" : "• Paleta DMG:", (s_rightPanelCursor == 0) ? colYellow : colWhite);
         const char* rawPalName = mgrGetPaletteName(gbColorizeMode);
         char palBuf[32];
         if(rawPalName && strstr(rawPalName, "Auto") != nullptr) {
@@ -2109,27 +2664,30 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         uiDrawTextRight(300.0f, 52.0f, palBuf, colYellow);
 
         // Fila 2: Color GBC (y: 72)
-        uiDrawText(138.0f, 72.0f, "• Color GBC:", colWhite);
+        uiDrawText(138.0f, 72.0f, (s_rightPanelCursor == 1) ? "► Color GBC:" : "• Color GBC:", (s_rightPanelCursor == 1) ? colYellow : colWhite);
         const char* gbcCol = getMenuOption("CGB Colors") ? "< Real >" : "< Nativo >";
         uiDrawTextRight(300.0f, 72.0f, gbcCol, colYellow);
 
         // Fila 3: Sonido GB (y: 92)
-        uiDrawText(138.0f, 92.0f, "• Sonido GB:", colWhite);
+        uiDrawText(138.0f, 92.0f, (s_rightPanelCursor == 2) ? "► Sonido GB:" : "• Sonido GB:", (s_rightPanelCursor == 2) ? colYellow : colWhite);
         const char* sndStr = getMenuOption("Master") ? "< 32 kHz >" : "< Mute >";
         uiDrawTextRight(300.0f, 92.0f, sndStr, getMenuOption("Master") ? colGreen : colDarkGray);
 
-        // 4 Cuadros de Color (y: 116..138)
+        // 4 Cuadros de Color (y: 114..136)
         const u32* palCols = mgrGetPaletteColors(gbColorizeMode);
         float swStart = 164.0f;
         for(int c = 0; c < 4; c++) {
             float sx = swStart + (float)c * 30.0f;
-            uiDrawRect(sx, 116.0f, 24.0f, 22.0f, palCols[c]);
-            uiDrawRectOutline(sx, 116.0f, 24.0f, 22.0f, 1.0f, colWhite);
+            uiDrawRect(sx, 114.0f, 24.0f, 22.0f, palCols[c]);
+            uiDrawRectOutline(sx, 114.0f, 24.0f, 22.0f, 1.0f, colWhite);
         }
 
-        // Botón [ Cambiar Paleta ] en y: 154..180 centrado exactamente en X = 221.0f
-        uiDrawModernButton(148.0f, 154.0f, 146.0f, 26.0f, "", uiColorRGBA(45, 30, 15, 255), colAmber, false);
-        uiDrawTextCentered(221.0f, 161.0f, "Cambiar Paleta", colAmber);
+        // Botón [ Cambiar Paleta ] en y: 148..174 centrado exactamente en X = 221.0f
+        uiDrawModernButton(148.0f, 148.0f, 146.0f, 26.0f, "", uiColorRGBA(45, 30, 15, 255), colAmber, false);
+        uiDrawTextCentered(221.0f, 155.0f, "Cambiar Paleta", colAmber);
+
+        // Indicación sutil de navegación por botones
+        uiDrawTextCentered(221.0f, 192.0f, "[L/R] Cambiar Panel   [B] Volver a ROMs", colAmber);
     }
 
     // 4. Dock Inferior Temático de 4 Botones (y: 208..234)
