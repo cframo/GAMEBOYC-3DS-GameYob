@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include <chrono>
 #include <fstream>
@@ -497,6 +498,7 @@ static std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::
 static bool fastForward;
 
 static std::string romName;
+static std::string romFullPath;
 static int s_pendingAutoloadSlot = -1;
 
 void mgrRequestAutoloadState(int slot) {
@@ -547,6 +549,7 @@ void mgrInit() {
     fastForward = false;
 
     romName = "";
+    romFullPath = "";
 
     fps = 0;
     lastPrintTime = std::chrono::high_resolution_clock::now();
@@ -591,6 +594,10 @@ std::string mgrGetRomName() {
     return romName;
 }
 
+const char* mgrGetRomPath() {
+    return romFullPath.c_str();
+}
+
 void mgrPowerOn(const char* romFile) {
     if(gameboy == NULL) {
         return;
@@ -613,6 +620,7 @@ void mgrPowerOn(const char* romFile) {
         int romSize = (int) romStream.tellg();
         romStream.seekg(0);
 
+        romFullPath = romFile;
         romName = romFile;
         std::string::size_type dot = romName.find_last_of('.');
         if(dot != std::string::npos) {
@@ -633,11 +641,6 @@ void mgrPowerOn(const char* romFile) {
         saveStream.close();
 
         cheatEngine->loadCheats(romName + ".cht");
-
-        if(mgrStateExists(-1)) {
-            mgrLoadState(-1);
-            mgrDeleteState(-1);
-        }
 
         enableMenuOption("Suspend");
         enableMenuOption("ROM Info");
@@ -666,6 +669,12 @@ void mgrPowerOn(const char* romFile) {
 
     mgrReset();
 
+    if(mgrStateExists(-1)) {
+        if(mgrLoadState(-1)) {
+            mgrDeleteState(-1);
+        }
+    }
+
     if(s_pendingAutoloadSlot >= 0) {
         int slotToLoad = s_pendingAutoloadSlot;
         s_pendingAutoloadSlot = -1;
@@ -689,6 +698,7 @@ void mgrPowerOff(bool save) {
     }
 
     romName = "";
+    romFullPath = "";
 
     if(systemIsRunning()) {
         mgrRefreshBorder();
@@ -743,33 +753,75 @@ void mgrWriteSave() {
     stream.close();
 }
 
-const std::string mgrGetStateName(int stateNum) {
-    std::stringstream nameStream;
-    if(stateNum == -1) {
-        nameStream << mgrGetRomName() << ".yss";
-    } else {
-        nameStream << mgrGetRomName() << ".ys" << stateNum;
-    }
-
-    return nameStream.str();
+static bool mgrIsKnownRomExtension(const std::string& extension) {
+    return strcasecmp(extension.c_str(), ".gb") == 0 ||
+           strcasecmp(extension.c_str(), ".gbc") == 0 ||
+           strcasecmp(extension.c_str(), ".cgb") == 0 ||
+           strcasecmp(extension.c_str(), ".sgb") == 0 ||
+           strcasecmp(extension.c_str(), ".bin") == 0 ||
+           strcasecmp(extension.c_str(), ".zip") == 0;
 }
 
-void mgrDeriveThumbPath(const char* statePath, char* outThumbPath, size_t maxLen) {
-    if(!statePath || !outThumbPath || maxLen == 0) return;
-    strncpy(outThumbPath, statePath, maxLen - 1);
-    outThumbPath[maxLen - 1] = '\0';
-    // Si la ruta contiene ".ys", reemplazar por ".ss"
-    char* p = strstr(outThumbPath, ".ys");
-    if(p) {
-        p[1] = 's'; // cambia 'y' por 's' -> ".ss"
-    } else {
-        strncat(outThumbPath, ".ss", maxLen - strlen(outThumbPath) - 1);
+static void mgrBuildStatePath(const char* romPath, int slot, bool thumbnail, char* outPath, size_t maxLen) {
+    if(outPath == nullptr || maxLen == 0) {
+        return;
     }
+
+    outPath[0] = '\0';
+
+    if(romPath == nullptr || romPath[0] == '\0') {
+        return;
+    }
+
+    std::string path(romPath);
+    std::string::size_type lastSeparator = path.find_last_of("/\\");
+    std::string::size_type lastDot = path.find_last_of('.');
+    if(lastDot != std::string::npos && (lastSeparator == std::string::npos || lastDot > lastSeparator)) {
+        std::string extension = path.substr(lastDot);
+        if(mgrIsKnownRomExtension(extension)) {
+            path.erase(lastDot);
+        }
+    }
+
+    std::string& saveDir = configGetSavePath();
+    if(!saveDir.empty() && strcasecmp(saveDir.c_str(), "same as ROM") != 0) {
+        std::string::size_type baseSeparator = path.find_last_of("/\\");
+        std::string baseName = (baseSeparator == std::string::npos) ? path : path.substr(baseSeparator + 1);
+
+        path = saveDir;
+        if(path.back() != '/' && path.back() != '\\') {
+            path += '/';
+        }
+        path += baseName;
+    }
+
+    if(slot < 0) {
+        path += thumbnail ? ".sss" : ".yss";
+    } else {
+        path += thumbnail ? ".ss" : ".ys";
+        path += std::to_string(slot);
+    }
+
+    strncpy(outPath, path.c_str(), maxLen - 1);
+    outPath[maxLen - 1] = '\0';
+}
+
+const std::string mgrGetStateName(int stateNum) {
+    char path[512];
+    mgrGetRomStatePath(romFullPath.c_str(), stateNum, path, sizeof(path));
+    return std::string(path);
+}
+
+void mgrGetRomStatePath(const char* romPath, int slot, char* outPath, size_t maxLen) {
+    mgrBuildStatePath(romPath, slot, false, outPath, maxLen);
+}
+
+void mgrGetRomThumbPath(const char* romPath, int slot, char* outPath, size_t maxLen) {
+    mgrBuildStatePath(romPath, slot, true, outPath, maxLen);
 }
 
 void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen) {
-    std::string stateName = mgrGetStateName(stateNum);
-    mgrDeriveThumbPath(stateName.c_str(), outPath, maxLen);
+    mgrGetRomThumbPath(romFullPath.c_str(), stateNum, outPath, maxLen);
 }
 
 bool mgrStateExists(int stateNum) {
@@ -817,18 +869,6 @@ bool mgrSaveState(int stateNum) {
 
     bool ret = gameboy->saveState(stream);
     stream.close();
-
-    if(ret) {
-        std::string stateFile = mgrGetStateName(stateNum);
-        char thumbPath[512];
-        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
-        gfxSaveStateThumbnail(thumbPath);
-    }
-
-#ifdef BACKEND_3DS
-    uiInvalidateRomCache();
-    uiReloadSavestatePreview();
-#endif
     return ret;
 }
 
@@ -840,7 +880,7 @@ void mgrDeleteState(int stateNum) {
     std::string stateFile = mgrGetStateName(stateNum);
     remove(stateFile.c_str());
     char thumbPath[512];
-    mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
+    mgrGetRomThumbPath(romFullPath.c_str(), stateNum, thumbPath, sizeof(thumbPath));
     remove(thumbPath);
 
 #ifdef BACKEND_3DS

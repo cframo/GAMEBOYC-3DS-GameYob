@@ -19,6 +19,7 @@
 #include <citro3d.h>
 
 #include "libs/stb_image/stb_image.h"
+#include "platform/gfx.h"
 #include "platform/common/menu/filechooser.h"
 #include "platform/common/manager.h"
 #include "platform/common/rom_metadata.h"
@@ -27,144 +28,13 @@
 #include "platform/common/cheatengine.h"
 #include "platform/3ds/scraper_worker.h"
 #include "platform/3ds/ui_renderer.h"
+#include "ui_font_data.h"
 #include "platform/input.h"
 #include "gameboy.h"
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
-
-// Fuente bitmap nativa 8x8 (128 caracteres base)
-static const u8 font8x8_basic[128][8] = {
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x7e, 0x81, 0xa5, 0x81, 0xbd, 0x99, 0x81, 0x7e},
-    {0x7e, 0xff, 0xdb, 0xff, 0xc3, 0xe7, 0xff, 0x7e},
-    {0x6c, 0xfe, 0xfe, 0xfe, 0x7c, 0x38, 0x10, 0x00},
-    {0x10, 0x38, 0x7c, 0xfe, 0x7c, 0x38, 0x10, 0x00},
-    {0x38, 0x7c, 0x38, 0xfe, 0xfe, 0xd6, 0x10, 0x38},
-    {0x10, 0x38, 0x7c, 0xfe, 0xfe, 0x7c, 0x10, 0x38},
-    {0x00, 0x00, 0x18, 0x3c, 0x3c, 0x18, 0x00, 0x00},
-    {0xff, 0xff, 0xe7, 0xc3, 0xc3, 0xe7, 0xff, 0xff},
-    {0x00, 0x3c, 0x66, 0x42, 0x42, 0x66, 0x3c, 0x00},
-    {0xff, 0xc3, 0x99, 0xbd, 0xbd, 0x99, 0xc3, 0xff},
-    {0x0f, 0x07, 0x0f, 0x7d, 0xcc, 0xcc, 0xcc, 0x78},
-    {0x3c, 0x66, 0x66, 0x66, 0x3c, 0x18, 0x7e, 0x18},
-    {0x3f, 0x33, 0x3f, 0x30, 0x30, 0x70, 0xf0, 0xe0},
-    {0x7f, 0x63, 0x7f, 0x63, 0x63, 0x67, 0xe6, 0xc0},
-    {0x18, 0xdb, 0x3c, 0xe7, 0xe7, 0x3c, 0xdb, 0x18},
-    {0x80, 0xe0, 0xf8, 0xfe, 0xf8, 0xe0, 0x80, 0x00},
-    {0x02, 0x0e, 0x3e, 0xfe, 0x3e, 0x0e, 0x02, 0x00},
-    {0x18, 0x3c, 0x7e, 0x18, 0x18, 0x7e, 0x3c, 0x18},
-    {0x66, 0x66, 0x66, 0x66, 0x66, 0x00, 0x66, 0x00},
-    {0x7f, 0xdb, 0xdb, 0x7b, 0x1b, 0x1b, 0x1b, 0x00},
-    {0x3e, 0x61, 0x3c, 0x66, 0x66, 0x3c, 0x86, 0x7c},
-    {0x00, 0x00, 0x00, 0x00, 0x7e, 0x7e, 0x7e, 0x00},
-    {0x18, 0x3c, 0x7e, 0x18, 0x7e, 0x3c, 0x18, 0xff},
-    {0x18, 0x3c, 0x7e, 0x18, 0x18, 0x18, 0x18, 0x00},
-    {0x18, 0x18, 0x18, 0x18, 0x7e, 0x3c, 0x18, 0x00},
-    {0x00, 0x18, 0x0c, 0xfe, 0x0c, 0x18, 0x00, 0x00},
-    {0x00, 0x30, 0x60, 0xfe, 0x60, 0x30, 0x00, 0x00},
-    {0x00, 0x00, 0xc0, 0xc0, 0xc0, 0xfe, 0x00, 0x00},
-    {0x00, 0x24, 0x66, 0xff, 0x66, 0x24, 0x00, 0x00},
-    {0x00, 0x18, 0x3c, 0x7e, 0xff, 0xff, 0x00, 0x00},
-    {0x00, 0xff, 0xff, 0x7e, 0x3c, 0x18, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x18, 0x3c, 0x3c, 0x18, 0x18, 0x00, 0x18, 0x00},
-    {0x66, 0x66, 0x24, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x6c, 0x6c, 0xfe, 0x6c, 0xfe, 0x6c, 0x6c, 0x00},
-    {0x18, 0x3e, 0x60, 0x3c, 0x06, 0x7c, 0x18, 0x00},
-    {0x00, 0xc6, 0xcc, 0x18, 0x30, 0x66, 0xc6, 0x00},
-    {0x38, 0x6c, 0x38, 0x76, 0xdc, 0xcc, 0x76, 0x00},
-    {0x18, 0x18, 0x30, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x0c, 0x18, 0x30, 0x30, 0x30, 0x18, 0x0c, 0x00},
-    {0x30, 0x18, 0x0c, 0x0c, 0x0c, 0x18, 0x30, 0x00},
-    {0x00, 0x66, 0x3c, 0xff, 0x3c, 0x66, 0x00, 0x00},
-    {0x00, 0x18, 0x18, 0x7e, 0x18, 0x18, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x30},
-    {0x00, 0x00, 0x00, 0x7e, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00},
-    {0x06, 0x0c, 0x18, 0x30, 0x60, 0xc0, 0x80, 0x00},
-    {0x38, 0x6c, 0xc6, 0xd6, 0xc6, 0x6c, 0x38, 0x00},
-    {0x18, 0x38, 0x18, 0x18, 0x18, 0x18, 0x7e, 0x00},
-    {0x7c, 0xc6, 0x06, 0x1c, 0x30, 0x66, 0xfe, 0x00},
-    {0x7c, 0xc6, 0x06, 0x3c, 0x06, 0xc6, 0x7c, 0x00},
-    {0x1c, 0x3c, 0x6c, 0xcc, 0xfe, 0x0c, 0x1e, 0x00},
-    {0xfe, 0xc0, 0xc0, 0xfc, 0x06, 0xc6, 0x7c, 0x00},
-    {0x38, 0x60, 0xc0, 0xfc, 0xc6, 0xc6, 0x7c, 0x00},
-    {0xfe, 0xc6, 0x0c, 0x18, 0x30, 0x30, 0x30, 0x00},
-    {0x7c, 0xc6, 0xc6, 0x7c, 0xc6, 0xc6, 0x7c, 0x00},
-    {0x7c, 0xc6, 0xc6, 0x7e, 0x06, 0x0c, 0x78, 0x00},
-    {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00},
-    {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x30},
-    {0x06, 0x0c, 0x18, 0x30, 0x18, 0x0c, 0x06, 0x00},
-    {0x00, 0x00, 0x7e, 0x00, 0x00, 0x7e, 0x00, 0x00},
-    {0x60, 0x30, 0x18, 0x0c, 0x18, 0x30, 0x60, 0x00},
-    {0x7c, 0xc6, 0x0c, 0x18, 0x18, 0x00, 0x18, 0x00},
-    {0x7c, 0xc6, 0xde, 0xde, 0xde, 0xc0, 0x78, 0x00},
-    {0x38, 0x6c, 0xc6, 0xfe, 0xc6, 0xc6, 0xc6, 0x00},
-    {0xfc, 0x66, 0x66, 0x7c, 0x66, 0x66, 0xfc, 0x00},
-    {0x3c, 0x66, 0xc0, 0xc0, 0xc0, 0x66, 0x3c, 0x00},
-    {0xf8, 0x6c, 0x66, 0x66, 0x66, 0x6c, 0xf8, 0x00},
-    {0xfe, 0x62, 0x68, 0x78, 0x68, 0x62, 0xfe, 0x00},
-    {0xfe, 0x62, 0x68, 0x78, 0x68, 0x60, 0xf0, 0x00},
-    {0x3c, 0x66, 0xc0, 0xc0, 0xce, 0x66, 0x3a, 0x00},
-    {0xc6, 0xc6, 0xc6, 0xfe, 0xc6, 0xc6, 0xc6, 0x00},
-    {0x3c, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, 0x00},
-    {0x1e, 0x0c, 0x0c, 0x0c, 0xcc, 0xcc, 0x78, 0x00},
-    {0xe6, 0x66, 0x6c, 0x78, 0x6c, 0x66, 0xe6, 0x00},
-    {0xf0, 0x60, 0x60, 0x60, 0x62, 0x66, 0xfe, 0x00},
-    {0xc6, 0xee, 0xfe, 0xfe, 0xd6, 0xc6, 0xc6, 0x00},
-    {0xc6, 0xe6, 0xf6, 0xde, 0xce, 0xc6, 0xc6, 0x00},
-    {0x7c, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
-    {0xfc, 0x66, 0x66, 0x7c, 0x60, 0x60, 0xf0, 0x00},
-    {0x7c, 0xc6, 0xc6, 0xc6, 0xc6, 0xce, 0x7c, 0x0e},
-    {0xfc, 0x66, 0x66, 0x7c, 0x6c, 0x66, 0xe6, 0x00},
-    {0x3c, 0x66, 0x30, 0x18, 0x0c, 0x66, 0x3c, 0x00},
-    {0x7e, 0x7e, 0x5a, 0x18, 0x18, 0x18, 0x3c, 0x00},
-    {0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
-    {0xc6, 0xc6, 0xc6, 0xc6, 0xc6, 0x6c, 0x38, 0x00},
-    {0xc6, 0xc6, 0xc6, 0xd6, 0xd6, 0xfe, 0x6c, 0x00},
-    {0xc6, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0xc6, 0x00},
-    {0x66, 0x66, 0x66, 0x3c, 0x18, 0x18, 0x3c, 0x00},
-    {0xfe, 0xc6, 0x8c, 0x18, 0x32, 0x66, 0xfe, 0x00},
-    {0x3c, 0x30, 0x30, 0x30, 0x30, 0x30, 0x3c, 0x00},
-    {0xc0, 0x60, 0x30, 0x18, 0x0c, 0x06, 0x02, 0x00},
-    {0x3c, 0x0c, 0x0c, 0x0c, 0x0c, 0x0c, 0x3c, 0x00},
-    {0x10, 0x38, 0x6c, 0xc6, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xff},
-    {0x30, 0x18, 0x0c, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x00, 0x78, 0x0c, 0x7c, 0xcc, 0x76, 0x00},
-    {0xe0, 0x60, 0x7c, 0x66, 0x66, 0x66, 0xdc, 0x00},
-    {0x00, 0x00, 0x7c, 0xc6, 0xc0, 0xc6, 0x7c, 0x00},
-    {0x1c, 0x0c, 0x7c, 0xcc, 0xcc, 0xcc, 0x76, 0x00},
-    {0x00, 0x00, 0x7c, 0xc6, 0xfe, 0xc0, 0x7c, 0x00},
-    {0x3c, 0x66, 0x60, 0xf8, 0x60, 0x60, 0xf0, 0x00},
-    {0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0xf8},
-    {0xe0, 0x60, 0x6c, 0x76, 0x66, 0x66, 0xe6, 0x00},
-    {0x18, 0x00, 0x38, 0x18, 0x18, 0x18, 0x3c, 0x00},
-    {0x06, 0x00, 0x06, 0x06, 0x06, 0x66, 0x66, 0x3c},
-    {0xe0, 0x60, 0x66, 0x6c, 0x78, 0x6c, 0xe6, 0x00},
-    {0x38, 0x18, 0x18, 0x18, 0x18, 0x18, 0x3c, 0x00},
-    {0x00, 0x00, 0xec, 0xfe, 0xd6, 0xd6, 0xd6, 0x00},
-    {0x00, 0x00, 0xdc, 0x66, 0x66, 0x66, 0x66, 0x00},
-    {0x00, 0x00, 0x7c, 0xc6, 0xc6, 0xc6, 0x7c, 0x00},
-    {0x00, 0x00, 0xdc, 0x66, 0x66, 0x7c, 0x60, 0xf0},
-    {0x00, 0x00, 0x76, 0xcc, 0xcc, 0x7c, 0x0c, 0x1e},
-    {0x00, 0x00, 0xdc, 0x76, 0x60, 0x60, 0xf0, 0x00},
-    {0x00, 0x00, 0x7e, 0xc0, 0x7c, 0x06, 0xfc, 0x00},
-    {0x30, 0x30, 0xfc, 0x30, 0x30, 0x36, 0x1c, 0x00},
-    {0x00, 0x00, 0xcc, 0xcc, 0xcc, 0xcc, 0x76, 0x00},
-    {0x00, 0x00, 0xc6, 0xc6, 0xc6, 0x6c, 0x38, 0x00},
-    {0x00, 0x00, 0xc6, 0xd6, 0xd6, 0xfe, 0x6c, 0x00},
-    {0x00, 0x00, 0xc6, 0x6c, 0x38, 0x6c, 0xc6, 0x00},
-    {0x00, 0x00, 0xc6, 0xc6, 0xc6, 0x7e, 0x06, 0xfc},
-    {0x00, 0x00, 0x7e, 0x4c, 0x18, 0x32, 0x7e, 0x00},
-    {0x0e, 0x18, 0x18, 0x70, 0x18, 0x18, 0x0e, 0x00},
-    {0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00},
-    {0x70, 0x18, 0x18, 0x0e, 0x18, 0x18, 0x70, 0x00},
-    {0x76, 0xdc, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    {0x00, 0x10, 0x38, 0x6c, 0xc6, 0xc6, 0xfe, 0x00}
-};
 
 static C3D_Tex s_boxartTex;
 static bool s_boxartLoaded = false;
@@ -178,9 +48,33 @@ static C3D_Tex s_savestateTex;
 static bool s_savestateTexAllocated = false;
 static bool s_savestateTexValid = false;
 static std::string s_loadedThumbKey = "";
+static std::string s_loadedThumbBaseKey = "";
 static int s_previewSlot = 0;
 
 static void updateSavestateThumbnail(const std::string& currentPath, int slot);
+
+static std::string uiGetStatePath(const std::string& romPath, int slot) {
+    char path[512];
+    mgrGetRomStatePath(romPath.c_str(), slot, path, sizeof(path));
+    return std::string(path);
+}
+
+static std::string uiGetThumbPath(const std::string& romPath, int slot) {
+    char path[512];
+    mgrGetRomThumbPath(romPath.c_str(), slot, path, sizeof(path));
+    return std::string(path);
+}
+
+static void uiCaptureStateThumbnail(int slot) {
+    char thumbPath[512];
+    mgrGetRomThumbPath(mgrGetRomPath(), slot, thumbPath, sizeof(thumbPath));
+    if(thumbPath[0] != '\0') {
+        gfxSaveStateThumbnail(thumbPath);
+    }
+
+    uiInvalidateRomCache();
+    uiReloadSavestatePreview();
+}
 
 static RomMetadata s_currentMeta;
 static bool s_metaLoaded = false;
@@ -396,153 +290,11 @@ void uiRenderInit() {
         return;
     }
 
-    memset(temp, 0, 256 * 256 * sizeof(u32));
+    memcpy(temp, s_fontAtlasPixels, sizeof(s_fontAtlasPixels));
 
-    // Tabla extendida de 256 glifos (128 ASCII nativos 8x8 + caracteres especiales)
-    u8 s_fontBitmap8x8[256][8];
-    memset(s_fontBitmap8x8, 0, sizeof(s_fontBitmap8x8));
-
-    for(int i = 0; i < 128; i++) {
-        memcpy(s_fontBitmap8x8[i], font8x8_basic[i], 8);
-    }
-
-    // Caracteres estrechos optimizados a 1:1 para tipografía compacta y nítida
-    static const u8 font_i[8]   = {0x00, 0x18, 0x00, 0x18, 0x18, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['i'], font_i, 8);
-    static const u8 font_l[8]   = {0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['l'], font_l, 8);
-    static const u8 font_1[8]   = {0x08, 0x18, 0x08, 0x08, 0x08, 0x08, 0x1C, 0x00}; memcpy(s_fontBitmap8x8['1'], font_1, 8);
-    static const u8 font_dot[8] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8['.'], font_dot, 8);
-    static const u8 font_col[8] = {0x00, 0x18, 0x18, 0x00, 0x00, 0x18, 0x18, 0x00}; memcpy(s_fontBitmap8x8[':'], font_col, 8);
-
-    // Glifos simétricos 8x8 optimizados
-    static const u8 font_V[8] = { 0x82, 0x82, 0x44, 0x44, 0x28, 0x28, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['V'], font_V, 8);
-    static const u8 font_v[8] = { 0x00, 0x00, 0x82, 0x44, 0x44, 0x28, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['v'], font_v, 8);
-    static const u8 font_X[8] = { 0x82, 0x44, 0x28, 0x10, 0x28, 0x44, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['X'], font_X, 8);
-    static const u8 font_x[8] = { 0x00, 0x00, 0x82, 0x44, 0x28, 0x10, 0x28, 0x44 }; memcpy(s_fontBitmap8x8['x'], font_x, 8);
-    static const u8 font_M[8] = { 0x82, 0xC6, 0xAA, 0x92, 0x82, 0x82, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['M'], font_M, 8);
-    static const u8 font_W[8] = { 0x82, 0x82, 0x82, 0x92, 0xAA, 0xC6, 0x82, 0x00 }; memcpy(s_fontBitmap8x8['W'], font_W, 8);
-    static const u8 font_T[8] = { 0xFE, 0x10, 0x10, 0x10, 0x10, 0x10, 0x10, 0x00 }; memcpy(s_fontBitmap8x8['T'], font_T, 8);
-    static const u8 font_S[8] = { 0x3C, 0x42, 0x38, 0x04, 0x42, 0x3C, 0x00, 0x00 }; memcpy(s_fontBitmap8x8['S'], font_S, 8);
-
-    // Acentos españoles minúsculas (tilde aguda en filas 0..1 + cuerpo base)
-    memcpy(s_fontBitmap8x8[0xE1], font8x8_basic['a'], 8); s_fontBitmap8x8[0xE1][0] = 0x0C; s_fontBitmap8x8[0xE1][1] = 0x18;
-    memcpy(s_fontBitmap8x8[0xE9], font8x8_basic['e'], 8); s_fontBitmap8x8[0xE9][0] = 0x0C; s_fontBitmap8x8[0xE9][1] = 0x18;
-    memcpy(s_fontBitmap8x8[0xED], font_i, 8);             s_fontBitmap8x8[0xED][0] = 0x0C; s_fontBitmap8x8[0xED][1] = 0x18;
-    memcpy(s_fontBitmap8x8[0xF3], font8x8_basic['o'], 8); s_fontBitmap8x8[0xF3][0] = 0x0C; s_fontBitmap8x8[0xF3][1] = 0x18;
-    memcpy(s_fontBitmap8x8[0xFA], font8x8_basic['u'], 8); s_fontBitmap8x8[0xFA][0] = 0x0C; s_fontBitmap8x8[0xFA][1] = 0x18;
-    memcpy(s_fontBitmap8x8[0xF1], font8x8_basic['n'], 8); s_fontBitmap8x8[0xF1][0] = 0x76; s_fontBitmap8x8[0xF1][1] = 0x00;
-
-    // Acentos españoles mayúsculas
-    memcpy(s_fontBitmap8x8[0xC1], font8x8_basic['A'], 8);
-    memcpy(s_fontBitmap8x8[0xC9], s_fontBitmap8x8['E'], 8);
-    memcpy(s_fontBitmap8x8[0xCD], font8x8_basic['I'], 8);
-    memcpy(s_fontBitmap8x8[0xD3], font8x8_basic['O'], 8);
-    memcpy(s_fontBitmap8x8[0xDA], font8x8_basic['U'], 8);
-    memcpy(s_fontBitmap8x8[0xD1], font8x8_basic['N'], 8);
-
-    // Símbolos especiales
-    static const u8 bullet[8]  = {0x00, 0x00, 0x18, 0x3C, 0x3C, 0x18, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x80], bullet, 8);
-    static const u8 rarrow[8]  = {0x00, 0x60, 0x78, 0x7E, 0x78, 0x60, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x81], rarrow, 8);
-    static const u8 larrow[8]  = {0x00, 0x06, 0x1E, 0x7E, 0x1E, 0x06, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x82], larrow, 8);
-    static const u8 uarrow[8]  = {0x00, 0x18, 0x3C, 0x7E, 0xFF, 0x00, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x83], uarrow, 8);
-    static const u8 darrow[8]  = {0x00, 0x00, 0xFF, 0x7E, 0x3C, 0x18, 0x00, 0x00}; memcpy(s_fontBitmap8x8[0x84], darrow, 8);
-    static const u8 star[8]    = {0x10, 0x38, 0xFE, 0x7C, 0x38, 0x6C, 0xC6, 0x00}; memcpy(s_fontBitmap8x8[0x85], star, 8);
-    static const u8 invExc[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x3C, 0x3C, 0x18}; memcpy(s_fontBitmap8x8[0xA1], invExc, 8);
-    static const u8 invQst[8]  = {0x00, 0x18, 0x00, 0x18, 0x18, 0x30, 0x63, 0x3E}; memcpy(s_fontBitmap8x8[0xBF], invQst, 8);
-
-    u32 shadowCol = uiColorRGBA(0, 0, 0, 125);
-
-    for(int c = 0; c < 256; c++) {
-        int cellCol = c & 0x0F;
-        int cellRow = (c >> 4) & 0x0F;
-        int cellX = cellCol * 16;
-        int cellY = cellRow * 16;
-
-        int minCol = 8;
-        int maxCol = -1;
-        for(int y = 0; y < 8; y++) {
-            u8 row = s_fontBitmap8x8[c][y];
-            if(row != 0) {
-                for(int x = 0; x < 8; x++) {
-                    if(row & (0x80 >> x)) {
-                        if(x < minCol) minCol = x;
-                        if(x > maxCol) maxCol = x;
-                    }
-                }
-            }
-        }
-
-        if(maxCol < 0 || c == ' ') {
-            s_glyphWidth[c] = 0.0f;
-            s_glyphAdvance[c] = (c == ' ') ? 4.0f : 2.0f;
-            continue;
-        }
-
-        int activeW = maxCol - minCol + 1;
-        s_glyphWidth[c] = (float)(activeW + 1);
-        s_glyphAdvance[c] = (float)(activeW + 1);
-
-        // Paso 1: Pintar los píxeles activos del glifo con un sutil gradiente vertical de luminancia
-        for(int r = 0; r < 8; r++) {
-            u32 glyphCol;
-            if(r <= 2) {
-                glyphCol = uiColorRGBA(255, 255, 255, 255);
-            } else if(r <= 4) {
-                glyphCol = uiColorRGBA(246, 249, 255, 255);
-            } else {
-                glyphCol = uiColorRGBA(232, 238, 250, 255);
-            }
-
-            for(int col = minCol; col <= maxCol; col++) {
-                if((s_fontBitmap8x8[c][r] >> (7 - col)) & 1) {
-                    int px = cellX + 1 + (col - minCol);
-                    int py = cellY + 1 + r;
-                    temp[py * 256 + px] = glyphCol;
-                }
-            }
-        }
-
-        // Paso 2 (Suavizado EXCLUSIVO de peldaños diagonales exteriores - CERO engrosamiento de trazos y CERO cierre de huecos internos):
-        for(int r = 0; r < 8; r++) {
-            for(int col = minCol; col <= maxCol; col++) {
-                if(!((s_fontBitmap8x8[c][r] >> (7 - col)) & 1)) {
-                    bool U = (r > 0) && ((s_fontBitmap8x8[c][r - 1] >> (7 - col)) & 1);
-                    bool D = (r < 7) && ((s_fontBitmap8x8[c][r + 1] >> (7 - col)) & 1);
-                    bool L = (col > minCol) && ((s_fontBitmap8x8[c][r] >> (7 - (col - 1))) & 1);
-                    bool R = (col < maxCol) && ((s_fontBitmap8x8[c][r] >> (7 - (col + 1))) & 1);
-                    int orthoCount = (int)U + (int)D + (int)L + (int)R;
-
-                    if(orthoCount == 2) {
-                        bool isDiagStep = false;
-                        if(U && L && !((s_fontBitmap8x8[c][r - 1] >> (7 - (col - 1))) & 1)) isDiagStep = true;
-                        if(U && R && !((s_fontBitmap8x8[c][r - 1] >> (7 - (col + 1))) & 1)) isDiagStep = true;
-                        if(D && L && !((s_fontBitmap8x8[c][r + 1] >> (7 - (col - 1))) & 1)) isDiagStep = true;
-                        if(D && R && !((s_fontBitmap8x8[c][r + 1] >> (7 - (col + 1))) & 1)) isDiagStep = true;
-                        if(isDiagStep) {
-                            int px = cellX + 1 + (col - minCol);
-                            int py = cellY + 1 + r;
-                            temp[py * 256 + px] = 0x58FFFFFF; // Blanco suave (alpha = 88) en el escalón diagonal
-                        }
-                    }
-                }
-            }
-        }
-
-        // Paso 3: Pintar la sombra en (px + 1, py + 1) con RGBA(0, 0, 0, 125) solo donde el destino esté completamente vacío (0)
-        for(int r = 0; r < 8; r++) {
-            for(int col = minCol; col <= maxCol; col++) {
-                int px = cellX + 1 + (col - minCol);
-                int py = cellY + 1 + r;
-                if(temp[py * 256 + px] != 0 && temp[py * 256 + px] != shadowCol) {
-                    int spx = px + 1;
-                    int spy = py + 1;
-                    if(spx < 256 && spy < 256) {
-                        if(temp[spy * 256 + spx] == 0) {
-                            temp[spy * 256 + spx] = shadowCol;
-                        }
-                    }
-                }
-            }
-        }
+    for(int i = 0; i < 256; i++) {
+        s_glyphWidth[i] = s_ttfGlyphWidth[i];
+        s_glyphAdvance[i] = s_ttfGlyphAdvance[i];
     }
 
     GSPGPU_FlushDataCache(temp, 256 * 256 * sizeof(u32));
@@ -556,7 +308,7 @@ void uiRenderInit() {
     linearFree(temp);
 
     GSPGPU_InvalidateDataCache(s_fontAtlasTex.data, s_fontAtlasTex.size);
-    C3D_TexSetFilter(&s_fontAtlasTex, GPU_NEAREST, GPU_NEAREST);
+    C3D_TexSetFilter(&s_fontAtlasTex, GPU_LINEAR, GPU_LINEAR);
     C3D_TexSetWrap(&s_fontAtlasTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
 
     s_fontAtlasInit = true;
@@ -647,6 +399,7 @@ void uiRenderExit() {
         s_savestateTexAllocated = false;
         s_savestateTexValid = false;
         s_loadedThumbKey = "";
+        s_loadedThumbBaseKey = "";
     }
     s_romCache.clear();
     s_romCacheOrder.clear();
@@ -986,12 +739,12 @@ static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scal
 
     int cellX = (c & 0x0F) * 16;
     int cellY = (c >> 4) * 16;
-    int gh = 9; // 8px de alto + 1px de sombra
+    int gh = 14;
 
     float u0 = (float)(cellX + 1) / 256.0f;
     float u1 = (float)(cellX + 1 + gw) / 256.0f;
-    float v0 = (float)(cellY + 1) / 256.0f;
-    float v1 = (float)(cellY + 1 + gh) / 256.0f;
+    float v0 = (float)cellY / 256.0f;
+    float v1 = (float)(cellY + gh) / 256.0f;
 
     float x0 = floorf(penX + 0.5f);
     float x1 = floorf(penX + (gw * scaleX) + 0.5f);
@@ -1046,7 +799,7 @@ void uiDrawTextScaled(float x, float y, float scale, const char* text, u32 color
     while(*text != '\0') {
         if(*text == '\n') {
             penX = x;
-            penY += floorf(12.0f * scale + 0.5f);
+            penY += floorf(14.0f * scale + 0.5f);
             text++;
             continue;
         }
@@ -1492,7 +1245,7 @@ void uiUpdateMenuState() {
             uint16_t mask = 0;
             struct stat st;
             for(int s = 0; s < 10; s++) {
-                std::string sf = currentPath + ".ys" + std::to_string(s);
+                std::string sf = uiGetStatePath(currentPath, s);
                 if(stat(sf.c_str(), &st) == 0 && st.st_size > 0) {
                     mask |= (1 << s);
                 }
@@ -1514,27 +1267,34 @@ void uiUpdateMenuState() {
 }
 
 static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
+    std::string baseKey = (!currentPath.empty()) ? (currentPath + "#" + std::to_string(slot)) : "";
+    if(baseKey.empty()) {
+        s_loadedThumbBaseKey = "";
+        s_loadedThumbKey = "";
+        s_savestateTexValid = false;
+        return;
+    }
+    if(baseKey == s_loadedThumbBaseKey) {
+        return;
+    }
+    s_loadedThumbBaseKey = baseKey;
+
     bool slotHasState = false;
-    std::string stateFile = "";
-    if(!currentPath.empty()) {
-        stateFile = currentPath + ".ys" + std::to_string(slot);
-        auto it = s_romCache.find(currentPath);
-        if(it != s_romCache.end()) {
-            slotHasState = (it->second.savestateMask & (1 << slot)) != 0;
-        } else {
-            struct stat stState;
-            slotHasState = (stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0);
-        }
+    time_t stateMtime = 0;
+    std::string stateFile = uiGetStatePath(currentPath, slot);
+    struct stat stState;
+    if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
+        slotHasState = true;
+        stateMtime = stState.st_mtime;
     }
 
-    std::string thumbKey = (!currentPath.empty()) ? (currentPath + "#" + std::to_string(slot)) : "";
+    std::string thumbKey = baseKey + "#" + std::to_string((long long)stateMtime);
     if(thumbKey != s_loadedThumbKey) {
         s_loadedThumbKey = thumbKey;
         s_savestateTexValid = false;
         if(slotHasState && s_savestateTexAllocated) {
-            char thumbPath[512];
-            mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
-            FILE* f = fopen(thumbPath, "rb");
+            std::string thumbFile = uiGetThumbPath(currentPath, slot);
+            FILE* f = fopen(thumbFile.c_str(), "rb");
             if(f != nullptr) {
                 char hdr[8];
                 if(fread(hdr, 1, 8, f) == 8 && (memcmp(hdr, "GYTHM1\0\0", 8) == 0 || memcmp(hdr, "GYTHM1\0", 7) == 0)) {
@@ -1565,6 +1325,7 @@ static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
 
 void uiReloadSavestatePreview() {
     s_loadedThumbKey = "";
+    s_loadedThumbBaseKey = "";
     s_savestateTexValid = false;
 }
 
@@ -1597,7 +1358,7 @@ bool uiHasSavestateInPreviewSlot() {
         return (it->second.savestateMask & (1 << s_previewSlot)) != 0;
     }
 
-    std::string stateFile = currentPath + ".ys" + std::to_string(s_previewSlot);
+    std::string stateFile = uiGetStatePath(currentPath, s_previewSlot);
     struct stat stState;
     return (stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0);
 }
@@ -1650,6 +1411,7 @@ void uiSetPreviewSlot(int slot) {
     if(s_previewSlot != slot) {
         s_previewSlot = slot;
         s_loadedThumbKey = "";
+        s_loadedThumbBaseKey = "";
     }
 }
 
@@ -1901,6 +1663,9 @@ static bool triggerModalOption(int opt, int dir, bool isTouch) {
         } else if(opt == 2) {
             // Save State
             bool ok = mgrSaveState(stateNum);
+            if(ok) {
+                uiCaptureStateThumbnail(stateNum);
+            }
             char msg[32];
             snprintf(msg, sizeof(msg), ok ? "Guardado en Slot %d OK" : "Fallo al Guardar", stateNum);
             setModalMessage(msg, ok ? UI_COLOR_GREEN : UI_COLOR_RGBA(255, 90, 90, 255));
@@ -1938,7 +1703,9 @@ static bool triggerModalOption(int opt, int dir, bool isTouch) {
         } else if(opt == 5) {
             // Suspend & Exit
             if(gameboy != nullptr && gameboy->isPoweredOn()) {
-                mgrSaveState(-1);
+                if(mgrSaveState(-1)) {
+                    uiCaptureStateThumbnail(-1);
+                }
             }
             configSave();
             s_modalOpen = false;
@@ -2422,9 +2189,16 @@ bool uiHandleRightPanelTouch(int px, int py, char** result, FileChooser* chooser
         }
         // Tap en Visor / Card de la captura (x: 196..308, y: 44..198) para iniciar juego o cargar estado
         if(px >= 196 && px <= 308 && py >= 44 && py <= 198) {
-            if(chooser != nullptr && chooser->getSelection() >= 0) {
-                if(uiHasSavestateInPreviewSlot()) {
-                    mgrRequestAutoloadState(uiGetPreviewSlot());
+            if(chooser != nullptr) {
+                std::string selectedRomPath = chooser->getSelectedRomPath();
+                if(!selectedRomPath.empty()) {
+                    int slot = uiGetPreviewSlot();
+                    std::string statePath = uiGetStatePath(selectedRomPath, slot);
+
+                    struct stat stState;
+                    if(stat(statePath.c_str(), &stState) == 0 && stState.st_size > 0) {
+                        mgrRequestAutoloadState(slot);
+                    }
                 }
                 if(chooser->navigateToSelection(result)) {
                     stateNum = uiGetPreviewSlot();
@@ -2515,6 +2289,9 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     const u32 colDarkGray = UI_COLOR_DARKGRAY;
     const u32 colGreen = UI_COLOR_GREEN;
 
+    char versionText[16];
+    snprintf(versionText, sizeof(versionText), "v%d.%d.%d", VERSION_MAJOR, VERSION_MINOR, VERSION_MICRO);
+
     // 1. Fondo general de la pantalla inferior (320x240)
     uiDrawRect(0.0f, 0.0f, 320.0f, 240.0f, colBg);
 
@@ -2523,7 +2300,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     uiDrawText(10.0f, 6.0f, "ROMS: ", colAmber);
     float romsW = uiGetTextWidth("ROMS: ", 1.0f);
     uiDrawTextClipped(10.0f + romsW, 6.0f, 210.0f, dirTitle.c_str(), colWhite);
-    uiDrawTextRight(310.0f, 6.0f, "v1.0.9", colGray);
+    uiDrawTextRight(310.0f, 6.0f, versionText, colGray);
     uiDrawRect(8.0f, 20.0f, 304.0f, 1.0f, colBorder);
 
     // Anchos dinámicos según el modo activo
@@ -2610,7 +2387,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     uiDrawRect(0.0f, 0.0f, 320.0f, 21.0f, colBg);
     uiDrawText(10.0f, 6.0f, "ROMS: ", colAmber);
     uiDrawTextClipped(10.0f + romsW, 6.0f, 210.0f, dirTitle.c_str(), colWhite);
-    uiDrawTextRight(310.0f, 6.0f, "v1.0.9", colGray);
+    uiDrawTextRight(310.0f, 6.0f, versionText, colGray);
     uiDrawRect(8.0f, 20.0f, 304.0f, 1.0f, colBorder);
 
     uiDrawRect(0.0f, 204.0f, 320.0f, 4.0f, colBg);
@@ -2646,7 +2423,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
             hasState = (it->second.savestateMask & (1 << s_previewSlot)) != 0;
             hasSav = it->second.hasSram;
         } else {
-            std::string stateFile = currentSelectedRom + ".ys" + std::to_string(s_previewSlot);
+            std::string stateFile = uiGetStatePath(currentSelectedRom, s_previewSlot);
             struct stat stState;
             if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
                 hasState = true;
@@ -2759,7 +2536,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
         // Título del juego / Metadatos del estado
         if(hasState) {
-            std::string stateFile = currentSelectedRom + ".ys" + std::to_string(s_previewSlot);
+            std::string stateFile = uiGetStatePath(currentSelectedRom, s_previewSlot);
             struct stat stState;
             char dateBuf[32] = "";
             if(stat(stateFile.c_str(), &stState) == 0) {

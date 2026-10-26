@@ -26,14 +26,6 @@ def find_font():
             return path
     raise FileNotFoundError("No se encontró ninguna fuente Sans-Serif compatible del sistema.")
 
-def sharpen(val):
-    if val < 60:
-        return 0
-    elif val >= 175:
-        return 255
-    else:
-        return int((val - 60) * 255 / 115)
-
 SPECIAL_MAP = {
     0x80: '•', # U+2022 bullet
     0x81: '►', # U+25BA right triangle
@@ -80,7 +72,7 @@ def main():
         minX, maxX, minY, maxY = 32, -1, 32, -1
         for y in range(32):
             for x in range(32):
-                if sharpen(im.getpixel((x, y))) > 0:
+                if im.getpixel((x, y)) > 0:
                     minX = min(minX, x)
                     maxX = max(maxX, x)
                     minY = min(minY, y)
@@ -96,7 +88,7 @@ def main():
         cell_glyph = [[0] * 16 for _ in range(16)]
         for y in range(minY, maxY + 1):
             for x in range(minX, maxX + 1):
-                val = sharpen(im.getpixel((x, y)))
+                val = im.getpixel((x, y))
                 dx = 1 + (x - minX) # Desplazar a X = 1
                 dy = y              # Baseline alineado a Y = 11
                 if 0 <= dx < 16 and 0 <= dy < 16:

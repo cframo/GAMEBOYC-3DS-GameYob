@@ -16,6 +16,7 @@ void mgrExit();
 void mgrReset();
 
 std::string mgrGetRomName();
+const char* mgrGetRomPath();
 void mgrPowerOn(const char* romFile);
 void mgrPowerOff(bool save = true);
 void mgrSelectRom();
@@ -27,7 +28,8 @@ const std::string mgrGetStateName(int stateNum);
 bool mgrLoadState(int stateNum);
 bool mgrSaveState(int stateNum);
 void mgrDeleteState(int stateNum);
-void mgrDeriveThumbPath(const char* statePath, char* outThumbPath, size_t maxLen);
+void mgrGetRomStatePath(const char* romPath, int slot, char* outPath, size_t maxLen);
+void mgrGetRomThumbPath(const char* romPath, int slot, char* outPath, size_t maxLen);
 void mgrGetStateThumbPath(int stateNum, char* outPath, size_t maxLen);
 void mgrRequestAutoloadState(int slot);
 

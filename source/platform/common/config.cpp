@@ -37,6 +37,7 @@ static const char* funcKeyNames[NUM_FUNC_KEYS] = {
 
 static std::string borderPath = "";
 static std::string romPath = "";
+static std::string savePath = "";
 
 static std::vector<KeyConfig> keyConfigs;
 static u32 selectedKeyConfig = 0;
@@ -44,6 +45,10 @@ static u32 selectedKeyConfig = 0;
 static void configLoadGeneral(INIReader &reader) {
     romPath = reader.Get("general", "rompath", "/");
     borderPath = reader.Get("general", "borderfile", "");
+    savePath = reader.Get("general", "savepath", "");
+    if(savePath.empty()) {
+        savePath = reader.Get("general", "savedir", "");
+    }
 
     size_t len = romPath.length();
     if(len == 0 || romPath[len - 1] != '/') {
@@ -55,6 +60,7 @@ static void configSaveGeneral(std::ofstream &stream) {
     stream << "[general]\n";
     stream << "rompath=" << romPath << "\n";
     stream << "borderfile=" << borderPath << "\n";
+    stream << "savepath=" << savePath << "\n";
     stream << "\n";
 }
 
@@ -194,6 +200,7 @@ void configSaveOptions(std::ofstream &stream) {
 bool configLoad() {
     borderPath = systemDefaultBorderPath();
     romPath = systemDefaultRomPath();
+    savePath = "";
 
     keyConfigs.clear();
 
@@ -234,6 +241,10 @@ void configSave() {
 
 std::string& configGetRomPath() {
     return romPath;
+}
+
+std::string& configGetSavePath() {
+    return savePath;
 }
 
 std::string& configGetBorderPath() {

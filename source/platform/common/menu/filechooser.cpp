@@ -1,6 +1,7 @@
 #include <dirent.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <cmath>
 
 #include <string>
@@ -214,6 +215,27 @@ template<class Data, class Metadata> void quickSort(std::vector<Data> &data, std
 
 std::string FileChooser::getDirectory() const {
     return this->directory;
+}
+
+std::string FileChooser::getSelectedRomPath() const {
+    if(this->selection < 0 || this->selection >= this->numFiles) {
+        return "";
+    }
+
+    if(this->selection >= (int) this->flags.size() || (this->flags[this->selection] & FLAG_DIRECTORY) != 0) {
+        return "";
+    }
+
+    if(this->selection >= (int) this->filenames.size()) {
+        return "";
+    }
+
+    std::string path = this->directory;
+    if(!path.empty() && path.back() != '/' && path.back() != '\\') {
+        path += '/';
+    }
+    path += this->filenames[this->selection];
+    return path;
 }
 
 void FileChooser::setDirectory(std::string directory) {
@@ -691,8 +713,16 @@ bool FileChooser::updateChooser(char** result) {
         uiOpenConfigModal(UI_TAB_GAME);
     }
     if(kDown & KEY_START) {
-        if(uiHasSavestateInPreviewSlot()) {
-            mgrRequestAutoloadState(uiGetPreviewSlot());
+        std::string selectedRomPath = this->getSelectedRomPath();
+        if(!selectedRomPath.empty()) {
+            int slot = uiGetPreviewSlot();
+            char statePath[512];
+            mgrGetRomStatePath(selectedRomPath.c_str(), slot, statePath, sizeof(statePath));
+
+            struct stat stState;
+            if(stat(statePath, &stState) == 0 && stState.st_size > 0) {
+                mgrRequestAutoloadState(slot);
+            }
         }
         if(this->navigateToSelection(result)) {
             stateNum = uiGetPreviewSlot();

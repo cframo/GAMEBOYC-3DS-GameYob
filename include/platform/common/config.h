@@ -11,6 +11,7 @@ bool configLoad();
 void configSave();
 
 std::string& configGetRomPath();
+std::string& configGetSavePath();
 
 std::string& configGetBorderPath();
 void configSetBorderPath(std::string& path);

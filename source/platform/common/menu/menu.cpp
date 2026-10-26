@@ -73,10 +73,12 @@ void subMenuGenericUpdateFunc() {
 void suspendFunc(int value) {
     printMenuMessage("Saving state...");
     if(mgrSaveState(-1)) {
-        std::string stateFile = mgrGetStateName(-1);
         char thumbPath[512];
-        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
-        gfxSaveStateThumbnail(thumbPath);
+        mgrGetRomThumbPath(mgrGetRomPath(), -1, thumbPath, sizeof(thumbPath));
+        if(thumbPath[0] != '\0') {
+            gfxSaveStateThumbnail(thumbPath);
+        }
+
 #ifdef BACKEND_3DS
         uiInvalidateRomCache();
         uiReloadSavestatePreview();
@@ -162,10 +164,12 @@ void stateSelectFunc(int value) {
 void stateSaveFunc(int value) {
     printMenuMessage("Saving state...");
     if(mgrSaveState(stateNum)) {
-        std::string stateFile = mgrGetStateName(stateNum);
         char thumbPath[512];
-        mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
-        gfxSaveStateThumbnail(thumbPath);
+        mgrGetRomThumbPath(mgrGetRomPath(), stateNum, thumbPath, sizeof(thumbPath));
+        if(thumbPath[0] != '\0') {
+            gfxSaveStateThumbnail(thumbPath);
+        }
+
 #ifdef BACKEND_3DS
         uiInvalidateRomCache();
         uiReloadSavestatePreview();
@@ -194,15 +198,7 @@ void stateLoadFunc(int value) {
 }
 
 void stateDeleteFunc(int value) {
-    std::string stateFile = mgrGetStateName(stateNum);
     mgrDeleteState(stateNum);
-    char thumbPath[512];
-    mgrDeriveThumbPath(stateFile.c_str(), thumbPath, sizeof(thumbPath));
-    remove(thumbPath);
-#ifdef BACKEND_3DS
-    uiInvalidateRomCache();
-    uiReloadSavestatePreview();
-#endif
 
     // Will grey out the other state options
     stateSelectFunc(stateNum);

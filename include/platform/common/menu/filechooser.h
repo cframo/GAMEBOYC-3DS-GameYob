@@ -23,6 +23,7 @@ public:
     FileChooser(std::string directory, std::vector<std::string> extensions, bool canQuit);
 
     std::string getDirectory() const;
+    std::string getSelectedRomPath() const;
     void setDirectory(std::string directory);
     char* chooseFile();
 
