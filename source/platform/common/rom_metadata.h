@@ -15,6 +15,7 @@ struct RomMetadata {
     int ramSizeKB;
     bool hasBattery;
     bool isGBC;
+    bool isCgbOnly;
     bool isSGB;
     std::string region;
     bool hasSave;

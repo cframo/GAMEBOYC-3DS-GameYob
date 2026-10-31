@@ -179,6 +179,101 @@ struct CachedRomEntry {
     }
 };
 
+struct CartridgePalette {
+    u32 bodyColor;
+    u32 highlightColor;
+    u32 shadowColor;
+    bool isTranslucent;
+};
+
+static std::string lowerAsciiCopy(const std::string& input) {
+    std::string result = input;
+    for(size_t i = 0; i < result.size(); i++) {
+        if(result[i] >= 'A' && result[i] <= 'Z') {
+            result[i] = (char) (result[i] + ('a' - 'A'));
+        }
+    }
+    return result;
+}
+
+static bool cartNameContains(const std::string& lowerName, const char* needle) {
+    return lowerName.find(needle) != std::string::npos;
+}
+
+static CartridgePalette makeCartridgePalette(u8 bodyR, u8 bodyG, u8 bodyB,
+                                             u8 highlightR, u8 highlightG, u8 highlightB,
+                                             u8 shadowR, u8 shadowG, u8 shadowB,
+                                             bool translucent) {
+    CartridgePalette palette;
+    palette.bodyColor = uiColorRGBA(bodyR, bodyG, bodyB, translucent ? 235 : 255);
+    palette.highlightColor = uiColorRGBA(highlightR, highlightG, highlightB, 255);
+    palette.shadowColor = uiColorRGBA(shadowR, shadowG, shadowB, 255);
+    palette.isTranslucent = translucent;
+    return palette;
+}
+
+static CartridgePalette getAuthenticCartridgeColors(const std::string& romName, bool isGBC, bool isCgbOnly) {
+    std::string name = lowerAsciiCopy(romName);
+
+    if(cartNameContains(name, "donkeykongland") || cartNameContains(name, "donkey kong land")) {
+        return makeCartridgePalette(235, 192, 28, 255, 225, 75, 165, 128, 12, false);
+    }
+
+    bool isPokemon = cartNameContains(name, "pokemon") || cartNameContains(name, "pok\xC3\xA9mon") || cartNameContains(name, "pok\xC3\x89mon");
+    if(isPokemon) {
+        if(cartNameContains(name, "gold") || cartNameContains(name, "oro")) {
+            return makeCartridgePalette(212, 175, 55, 245, 215, 100, 140, 110, 25, false);
+        }
+        if(cartNameContains(name, "silver") || cartNameContains(name, "plata")) {
+            return makeCartridgePalette(180, 188, 198, 225, 232, 240, 115, 122, 132, false);
+        }
+        if(cartNameContains(name, "crystal") || cartNameContains(name, "cristal")) {
+            return makeCartridgePalette(95, 185, 230, 160, 225, 255, 50, 120, 165, true);
+        }
+        if(cartNameContains(name, "red") || cartNameContains(name, "rojo")) {
+            return makeCartridgePalette(200, 38, 38, 238, 82, 82, 130, 18, 18, false);
+        }
+        if(cartNameContains(name, "blue") || cartNameContains(name, "azul")) {
+            return makeCartridgePalette(35, 88, 200, 78, 135, 240, 18, 50, 130, false);
+        }
+        if(cartNameContains(name, "yellow") || cartNameContains(name, "amarillo") || cartNameContains(name, "pikachu")) {
+            return makeCartridgePalette(235, 192, 28, 255, 225, 75, 165, 128, 12, false);
+        }
+        if(cartNameContains(name, "green") || cartNameContains(name, "verde")) {
+            return makeCartridgePalette(46, 168, 68, 88, 208, 108, 24, 108, 40, false);
+        }
+    }
+
+    if(cartNameContains(name, "zelda")) {
+        if(cartNameContains(name, "seasons")) {
+            return makeCartridgePalette(190, 100, 40, 240, 160, 80, 110, 50, 15, false);
+        }
+        if(cartNameContains(name, "ages")) {
+            return makeCartridgePalette(40, 100, 190, 80, 160, 240, 20, 50, 110, false);
+        }
+        if(cartNameContains(name, "dx") || cartNameContains(name, "awakening")) {
+            return makeCartridgePalette(40, 42, 46, 75, 78, 85, 20, 22, 26, false);
+        }
+    }
+
+    if(cartNameContains(name, "kirby")) {
+        return makeCartridgePalette(232, 130, 170, 252, 175, 205, 165, 80, 115, false);
+    }
+
+    if(cartNameContains(name, "wario")) {
+        return makeCartridgePalette(125, 85, 165, 225, 220, 235, 70, 40, 100, false);
+    }
+
+    if(isGBC) {
+        if(isCgbOnly) {
+            return makeCartridgePalette(86, 82, 108, 128, 122, 154, 50, 46, 68, true);
+        }
+        return makeCartridgePalette(42, 44, 48, 76, 80, 88, 20, 22, 25, false);
+    }
+
+    return makeCartridgePalette(188, 186, 180, 220, 218, 212, 128, 126, 120, false);
+}
+
 static std::unordered_map<std::string, CachedRomEntry> s_romCache;
 static std::deque<std::string> s_romCacheOrder;
 static std::string s_lastSelectedRomPath = "";
@@ -462,6 +557,47 @@ void uiDrawRect(float x, float y, float w, float h, u32 color) {
 
     C3D_ImmDrawBegin(GPU_TRIANGLES);
     emitUiQuad(x, y, x + w, y + h, 0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmDrawEnd();
+}
+
+static void uiDrawTriangleDown(float centerX, float topY, float width, float height, u32 color) {
+    if(width <= 0.0f || height <= 0.0f) {
+        return;
+    }
+
+    if((color & 0xFF000000) == 0) {
+        if((color & 0x00FFFFFF) != 0) {
+            color |= 0xFF000000;
+        } else {
+            return;
+        }
+    }
+
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_AlphaTest(true, GPU_GREATER, 0);
+
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvColor(env0, color);
+
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    C3D_ImmSendAttrib(centerX - width * 0.5f, topY, 0.5f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+
+    C3D_ImmSendAttrib(centerX + width * 0.5f, topY, 0.5f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+
+    C3D_ImmSendAttrib(centerX, topY + height, 0.5f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmDrawEnd();
 }
 
@@ -1025,6 +1161,16 @@ static void uiDrawTextCenteredClipped(float centerX, float y, float maxWidth, co
     uiDrawTextClipped(startX, y, maxWidth, text, color);
 }
 
+static void uiDrawTextCenteredScaled(float centerX, float y, float scale, const char* text, u32 color) {
+    if(!text || text[0] == '\0' || scale <= 0.0f) {
+        return;
+    }
+
+    float textWidth = uiGetTextWidth(text, scale);
+    float startX = floorf(centerX - (textWidth * 0.5f) + 0.5f);
+    uiDrawTextScaled(startX, y, scale, text, color);
+}
+
 void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text) {
     (void) scaleX;
     (void) scaleY;
@@ -1124,7 +1270,6 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
         if(imgData != nullptr) {
             u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
             if(temp != nullptr) {
-                const u32* srcPx = (const u32*) imgData;
                 for(int y = 0; y < 128; y++) {
                     int srcY = (y * imgH) / 128;
                     if(srcY >= imgH) srcY = imgH - 1;
@@ -1133,7 +1278,12 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
                     for(int x = 0; x < 128; x++) {
                         int srcX = (x * imgW) / 128;
                         if(srcX >= imgW) srcX = imgW - 1;
-                        temp[dstRow + x] = srcPx[srcRow + srcX];
+                        const u8* srcPx = imgData + ((srcRow + srcX) * 4);
+                        u8 r = srcPx[0];
+                        u8 g = srcPx[1];
+                        u8 b = srcPx[2];
+                        u8 a = srcPx[3];
+                        temp[dstRow + x] = ((u32) r << 24) | ((u32) g << 16) | ((u32) b << 8) | (u32) a;
                     }
                 }
 
@@ -1345,7 +1495,7 @@ static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
             FILE* f = fopen(thumbFile.c_str(), "rb");
             if(f != nullptr) {
                 char hdr[8];
-                if(fread(hdr, 1, 8, f) == 8 && (memcmp(hdr, "GYTHM1\0\0", 8) == 0 || memcmp(hdr, "GYTHM1\0", 7) == 0)) {
+                if(fread(hdr, 1, 8, f) == 8 && memcmp(hdr, "GYTHM2\0\0", 8) == 0) {
                     u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
                     if(temp != nullptr) {
                         if(fread(temp, sizeof(u32), 128 * 128, f) == 128 * 128) {
@@ -1495,7 +1645,7 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
     if(eyeOffset <= 0.0f) {
         s_boxartAngleY += 0.02f;
     }
-    float rotY = sinf(s_boxartAngleY) * 28.0f * (M_PI / 180.0f);
+    float rotY = (12.0f + sinf(s_boxartAngleY) * 8.0f) * (M_PI / 180.0f);
     float rotX = -8.0f * (M_PI / 180.0f);
 
     C3D_Mtx modelView;
@@ -1515,8 +1665,8 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
     C3D_CullFace(GPU_CULL_NONE);
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
-    float hw = size * 0.44f;
-    float hh = size * 0.44f;
+    float hw = size * 0.5f;
+    float hh = size * 0.5f;
     float hd = 8.0f; // 16px ancho en Z
 
     Vec3 FTL = {-hw, -hh,  hd};
@@ -1640,6 +1790,123 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
     C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
     C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
     C3D_TexEnvInit(C3D_GetTexEnv(1));
+}
+
+static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
+                                 const std::string& romName, bool isGBC, bool isCgbOnly) {
+    const float cartW = 144.0f;
+    const float cartH = 168.0f;
+    const float parallax = eyeOffset * 0.6f;
+    const float cartX = centerX - (cartW * 0.5f) + parallax;
+    const float cartY = centerY - (cartH * 0.5f);
+
+    CartridgePalette palette = getAuthenticCartridgeColors(romName, isGBC, isCgbOnly);
+
+    uiDrawDropShadow(cartX + 4.0f - parallax * 0.2f, cartY + 6.0f, cartW, cartH, 6.0f, 150);
+    uiDrawRoundedRect(cartX, cartY, cartW, cartH, 3.0f, palette.bodyColor, palette.shadowColor, 1.0f);
+
+    // Biseles de plástico
+    uiDrawRect(cartX + 4.0f, cartY + 1.0f, cartW - 8.0f, 2.0f, palette.highlightColor);
+    uiDrawRect(cartX + 1.0f, cartY + 4.0f, 2.0f, cartH - 8.0f, palette.highlightColor);
+    uiDrawRect(cartX + 4.0f, cartY + cartH - 3.0f, cartW - 8.0f, 2.0f, palette.shadowColor);
+    uiDrawRect(cartX + cartW - 3.0f, cartY + 4.0f, 2.0f, cartH - 8.0f, palette.shadowColor);
+
+    if(isGBC && isCgbOnly) {
+        // Cabezal convexo del Game Boy Color
+        uiDrawRoundedRect(cartX + 6.0f, cartY + 1.0f, cartW - 12.0f, 20.0f, 8.0f,
+                          palette.bodyColor, palette.highlightColor, 1.0f);
+        uiDrawRect(cartX + 12.0f, cartY + 3.0f, cartW - 24.0f, 1.0f, palette.highlightColor);
+
+        uiDrawRoundedRect(centerX - 52.0f + parallax, cartY + 4.0f, 104.0f, 16.0f, 8.0f,
+                          palette.shadowColor, palette.highlightColor, 1.0f);
+        uiDrawTextCenteredScaled(centerX + parallax, cartY + 7.0f, 0.8f, "GAME BOY COLOR", palette.highlightColor);
+    } else {
+        // Estrías de agarre y muesca escalonada del Game Boy / Dual-Mode
+        for(int i = 0; i < 5; i++) {
+            uiDrawRect(cartX + 7.0f, cartY + 6.0f + (float) i * 3.0f, 12.0f, 1.0f, palette.shadowColor);
+            uiDrawRect(cartX + 7.0f, cartY + 7.0f + (float) i * 3.0f, 12.0f, 1.0f, uiColorRGBA(255, 255, 255, 35));
+        }
+
+        uiDrawRect(cartX + cartW - 18.0f, cartY, 18.0f, 8.0f, uiColorRGBA(10, 14, 20, 255));
+        uiDrawRect(cartX + cartW - 12.0f, cartY + 8.0f, 12.0f, 4.0f, uiColorRGBA(10, 14, 20, 255));
+
+        uiDrawRoundedRect(centerX - 52.0f + parallax, cartY + 2.0f, 104.0f, 16.0f, 8.0f,
+                          palette.shadowColor, palette.highlightColor, 1.0f);
+        uiDrawTextCenteredScaled(centerX + parallax, cartY + 4.0f, 0.8f, "Nintendo GAME BOY", palette.highlightColor);
+    }
+
+    if(palette.isTranslucent) {
+        uiDrawRect(cartX + 6.0f, cartY + 6.0f, cartW - 12.0f, 3.0f, uiColorRGBA(255, 255, 255, 32));
+    }
+
+    // Etiqueta central 118x108
+    const float labelX = cartX + 13.0f;
+    const float labelY = cartY + 30.0f;
+    const float labelW = 118.0f;
+    const float labelH = 108.0f;
+    const float bandW = 16.0f;
+    const float mainX = labelX + bandW;
+    const float mainY = labelY;
+    const float mainW = labelW - bandW;
+    const float mainH = labelH;
+
+    uiDrawRect(labelX - 2.0f, labelY - 2.0f, labelW + 4.0f, labelH + 4.0f, uiColorRGBA(15, 18, 24, 255));
+    uiDrawRect(labelX, labelY, labelW, labelH, uiColorRGBA(232, 232, 236, 255));
+    uiDrawRect(labelX, labelY, bandW, labelH, palette.highlightColor);
+    uiDrawRect(labelX + bandW - 2.0f, labelY, 2.0f, labelH, palette.shadowColor);
+
+    // Distintivo compacto de la franja lateral
+    uiDrawRect(labelX + 4.0f, labelY + 12.0f, 8.0f, 8.0f, palette.shadowColor);
+    uiDrawRect(labelX + 6.0f, labelY + 14.0f, 4.0f, 4.0f, palette.highlightColor);
+
+    if(s_boxartLoaded && s_boxartTexAllocated) {
+        C3D_TexBind(0, &s_boxartTex);
+        C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+        C3D_TexEnvInit(env0);
+        C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+        C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+        C3D_TexEnvInit(C3D_GetTexEnv(1));
+        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+        C3D_CullFace(GPU_CULL_NONE);
+        C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+        C3D_ImmDrawBegin(GPU_TRIANGLES);
+        emitUiQuad(mainX, mainY, mainX + mainW, mainY + mainH, 0.0f, 0.0f, 1.0f, 1.0f);
+        C3D_ImmDrawEnd();
+    } else {
+        uiDrawRect(mainX, mainY, mainW, mainH, uiColorRGBA(30, 34, 42, 255));
+        std::string label = romName.empty() ? "GAME BOY" : romName;
+        uiDrawTextCenteredClipped(mainX + (mainW * 0.5f), mainY + 42.0f, mainW - 8.0f, label.c_str(), palette.highlightColor);
+    }
+
+    uiDrawRectOutline(mainX, mainY, mainW, mainH, 1.0f, palette.shadowColor);
+
+    // Reflejo diagonal sutil de plástico laminado
+    C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_AlphaTest(true, GPU_GREATER, 0);
+
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvColor(env0, uiColorRGBA(255, 255, 255, 22));
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    Vec3 g0 = {mainX + mainW * 0.54f, mainY, 0.5f};
+    Vec3 g1 = {mainX + mainW * 0.70f, mainY, 0.5f};
+    Vec3 g2 = {mainX + mainW * 0.84f, mainY + mainH, 0.5f};
+    Vec3 g3 = {mainX + mainW * 0.68f, mainY + mainH, 0.5f};
+    Vec2 uv = {0.0f, 0.0f};
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    emitQuad3D(g0, uv, g1, uv, g2, uv, g3, uv);
+    C3D_ImmDrawEnd();
+
+    // Muescas inferiores y triángulo indicador
+    uiDrawRect(cartX + 2.0f, cartY + cartH - 14.0f, 6.0f, 10.0f, palette.shadowColor);
+    uiDrawRect(cartX + cartW - 8.0f, cartY + cartH - 14.0f, 6.0f, 10.0f, palette.shadowColor);
+    uiDrawTriangleDown(centerX + parallax, cartY + cartH - 12.0f, 12.0f, 8.0f, uiColorRGBA(10, 14, 20, 255));
 }
 
 // =============================================================================
@@ -2496,6 +2763,9 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         // MODO 0: VISTA PREVIA (panelW = 118 px, panelX = 194)
         // ==========================================
         float centerX = 252.0f;
+        const float viewerX = 204.0f;
+        const float viewerY = 40.0f;
+        const float viewerSize = 96.0f;
 
         if(hasState) {
             uiDrawTextCenteredClipped(centerX, 28.0f, 118.0f, "ESTADO GUARDADO", colAmber);
@@ -2506,8 +2776,8 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         }
         uiDrawRect(panelX + 4.0f, 40.0f, panelW - 8.0f, 1.0f, colAmber);
 
-        // Recuadro del visor (84x84 px centrado en x=211, y=44)
-        uiDrawDropShadow(211.0f, 44.0f, 84.0f, 84.0f, 2.0f, 70);
+        // Recuadro del visor (96x96 px centrado en x=252, y=40)
+        uiDrawDropShadow(viewerX, viewerY, viewerSize, viewerSize, 2.0f, 70);
 
         if(hasState) {
             if(s_savestateTexValid && s_savestateTexAllocated) {
@@ -2522,10 +2792,10 @@ void uiDrawFileChooser(const FileChooser* chooser) {
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
                 C3D_ImmDrawBegin(GPU_TRIANGLES);
-                emitUiQuad(211.0f, 44.0f, 295.0f, 128.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                emitUiQuad(viewerX, viewerY, viewerX + viewerSize, viewerY + viewerSize, 0.0f, 0.0f, 1.0f, 1.0f);
                 C3D_ImmDrawEnd();
 
-                uiDrawRectOutline(211.0f, 44.0f, 84.0f, 84.0f, 1.0f, colGreen);
+                uiDrawRectOutline(viewerX, viewerY, viewerSize, viewerSize, 1.0f, colGreen);
             } else {
                 if(s_boxartLoaded && s_boxartTexAllocated) {
                     C3D_TexBind(0, &s_boxartTex);
@@ -2539,19 +2809,19 @@ void uiDrawFileChooser(const FileChooser* chooser) {
                     C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
                     C3D_ImmDrawBegin(GPU_TRIANGLES);
-                    emitUiQuad(211.0f, 44.0f, 295.0f, 128.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                    emitUiQuad(viewerX, viewerY, viewerX + viewerSize, viewerY + viewerSize, 0.0f, 0.0f, 1.0f, 1.0f);
                     C3D_ImmDrawEnd();
                 } else if(!currentSelectedRom.empty()) {
                     bool isGBC = (currentSelectedRom.find(".gbc") != std::string::npos || currentSelectedRom.find(".cgb") != std::string::npos);
                     u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
-                    uiDrawRect(223.0f, 48.0f, 60.0f, 74.0f, colCart);
-                    uiDrawRectOutline(223.0f, 48.0f, 60.0f, 74.0f, 1.0f, colAmber);
-                    uiDrawTextCentered(253.0f, 78.0f, isGBC ? "CGB" : "DMG", colWhite);
+                    uiDrawRect(viewerX + 14.0f, viewerY + 6.0f, 68.0f, 84.0f, colCart);
+                    uiDrawRectOutline(viewerX + 14.0f, viewerY + 6.0f, 68.0f, 84.0f, 1.0f, colAmber);
+                    uiDrawTextCentered(centerX, 80.0f, isGBC ? "CGB" : "DMG", colWhite);
                 } else {
                     uiDrawTextCentered(centerX, 80.0f, "Sin Archivo", colGray);
                 }
-                uiDrawRectOutline(211.0f, 44.0f, 84.0f, 84.0f, 1.0f, colAmber);
-                uiDrawPillBadge(228.0f, 108.0f, 50.0f, 16.0f, "SAV OK", uiColorRGBA(20, 60, 25, 230), colGreen);
+                uiDrawRectOutline(viewerX, viewerY, viewerSize, viewerSize, 1.0f, colAmber);
+                uiDrawPillBadge(viewerX + 23.0f, viewerY + 76.0f, 50.0f, 16.0f, "SAV OK", uiColorRGBA(20, 60, 25, 230), colGreen);
             }
         } else if(s_previewSlot == 0) {
             if(s_boxartLoaded && s_boxartTexAllocated) {
@@ -2566,27 +2836,27 @@ void uiDrawFileChooser(const FileChooser* chooser) {
                 C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
                 C3D_ImmDrawBegin(GPU_TRIANGLES);
-                emitUiQuad(211.0f, 44.0f, 295.0f, 128.0f, 0.0f, 0.0f, 1.0f, 1.0f);
+                emitUiQuad(viewerX, viewerY, viewerX + viewerSize, viewerY + viewerSize, 0.0f, 0.0f, 1.0f, 1.0f);
                 C3D_ImmDrawEnd();
 
-                uiDrawRectOutline(211.0f, 44.0f, 84.0f, 84.0f, 1.0f, colAmber);
+                uiDrawRectOutline(viewerX, viewerY, viewerSize, viewerSize, 1.0f, colAmber);
             } else if(!currentSelectedRom.empty()) {
                 bool isGBC = (currentSelectedRom.find(".gbc") != std::string::npos || currentSelectedRom.find(".cgb") != std::string::npos);
                 u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
-                uiDrawRect(223.0f, 48.0f, 60.0f, 74.0f, colCart);
-                uiDrawRectOutline(223.0f, 48.0f, 60.0f, 74.0f, 1.0f, colAmber);
-                uiDrawTextCentered(253.0f, 78.0f, isGBC ? "CGB" : "DMG", colWhite);
+                uiDrawRect(viewerX + 14.0f, viewerY + 6.0f, 68.0f, 84.0f, colCart);
+                uiDrawRectOutline(viewerX + 14.0f, viewerY + 6.0f, 68.0f, 84.0f, 1.0f, colAmber);
+                uiDrawTextCentered(centerX, 80.0f, isGBC ? "CGB" : "DMG", colWhite);
             } else {
                 uiDrawTextCentered(centerX, 80.0f, "Sin Archivo", colGray);
             }
         } else {
             // Slot > 0 y sin estado
-            uiDrawRect(211.0f, 44.0f, 84.0f, 84.0f, uiColorRGBA(10, 14, 20, 255));
-            uiDrawRectOutline(211.0f, 44.0f, 84.0f, 84.0f, 1.0f, colDarkGray);
+            uiDrawRect(viewerX, viewerY, viewerSize, viewerSize, uiColorRGBA(10, 14, 20, 255));
+            uiDrawRectOutline(viewerX, viewerY, viewerSize, viewerSize, 1.0f, colDarkGray);
             char emptyBuf[32];
             snprintf(emptyBuf, sizeof(emptyBuf), "Slot %d Vacio", s_previewSlot);
-            uiDrawTextCentered(253.0f, 74.0f, emptyBuf, colGray);
-            uiDrawTextCentered(253.0f, 90.0f, "Sin Captura", colDarkGray);
+            uiDrawTextCentered(centerX, 82.0f, emptyBuf, colGray);
+            uiDrawTextCentered(centerX, 98.0f, "Sin Captura", colDarkGray);
         }
 
         // Título del juego / Metadatos del estado
@@ -2599,23 +2869,23 @@ void uiDrawFileChooser(const FileChooser* chooser) {
                 }
             }
             if(dateBuf[0] != '\0') {
-                uiDrawTextCenteredClipped(centerX, 138.0f, 118.0f, dateBuf, colWhite);
+                uiDrawTextCenteredClipped(centerX, 141.0f, 118.0f, dateBuf, colWhite);
             } else {
-                uiDrawTextCenteredClipped(centerX, 138.0f, 118.0f, "Partida disponible", colWhite);
+                uiDrawTextCenteredClipped(centerX, 141.0f, 118.0f, "Partida disponible", colWhite);
             }
 
             std::string cleanName = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : baseSelectedName;
             if(!cleanName.empty()) {
-                uiDrawTextCenteredClipped(centerX, 152.0f, 114.0f, cleanName.c_str(), colAmber);
+                uiDrawTextCenteredClipped(centerX, 153.0f, 114.0f, cleanName.c_str(), colAmber);
             }
         } else {
             std::string cleanName = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : baseSelectedName;
             if(!cleanName.empty()) {
-                uiDrawTextCenteredClipped(centerX, 138.0f, 114.0f, cleanName.c_str(), colAmber);
+                uiDrawTextCenteredClipped(centerX, 141.0f, 114.0f, cleanName.c_str(), colAmber);
             }
 
             std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
-            uiDrawTextCenteredClipped(centerX, 152.0f, 114.0f, pubStr.c_str(), colGray);
+            uiDrawTextCenteredClipped(centerX, 153.0f, 114.0f, pubStr.c_str(), colGray);
         }
 
         // Selector "< Slot N >" centrado en x=252 en y=166
@@ -2623,15 +2893,15 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         snprintf(slotBuf, sizeof(slotBuf), "< Slot %d >", s_previewSlot);
         uiDrawTextCenteredClipped(centerX, 166.0f, 118.0f, slotBuf, colWhite);
 
-        // Estado / Acción en línea inferior (y=182)
+        // Estado / Acción en línea inferior (y=179)
         if(hasState) {
-            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, "[START] Cargar", colGreen);
+            uiDrawTextCenteredClipped(centerX, 179.0f, 118.0f, "[START] Cargar", colGreen);
         } else if(s_previewSlot == 0) {
             const char* statusStr = hasSav ? "[SRAM OK]" : "[Sin Estado]";
             u32 statusCol = hasSav ? colCyan : colDarkGray;
-            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, statusStr, statusCol);
+            uiDrawTextCenteredClipped(centerX, 179.0f, 118.0f, statusStr, statusCol);
         } else {
-            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, "[A] Iniciar", colDarkGray);
+            uiDrawTextCenteredClipped(centerX, 179.0f, 118.0f, "[A] Iniciar", colDarkGray);
         }
 
     } else if(s_brMode == BR_MODE_DISPLAY) {
@@ -2886,59 +3156,41 @@ void uiDrawTopScreenHub(float eyeOffset) {
     uiDrawText(366.0f, 9.0f, batPctStr, batCol);
 
     // 3. Área Izquierda - Showcase Limpio (x: 20..176, y: 36..204)
-    float boxW = 124.0f;
-    float boxH = 124.0f;
-    float boxX = 98.0f - (boxW * 0.5f) + (eyeOffset * 0.5f);
-    float boxY = 120.0f - (boxH * 0.5f);
-
     if(isDir) {
-        uiDrawDropShadow(boxX, boxY, boxW, boxH, 4.0f, 80);
-        uiDrawRoundedRect(boxX, boxY, boxW, boxH, 4.0f, colCardBg, colCardBorder, 1.0f);
-        uiDrawFolderIcon(boxX + 54.0f, boxY + 44.0f);
-        uiDrawTextCentered(boxX + 62.0f, boxY + 70.0f, "Carpeta SDMC", colWhite);
+        float dirW = 124.0f;
+        float dirH = 124.0f;
+        float dirX = 98.0f - (dirW * 0.5f) + (eyeOffset * 0.5f);
+        float dirY = 120.0f - (dirH * 0.5f);
+
+        uiDrawDropShadow(dirX, dirY, dirW, dirH, 4.0f, 80);
+        uiDrawRoundedRect(dirX, dirY, dirW, dirH, 4.0f, colCardBg, colCardBorder, 1.0f);
+        uiDrawFolderIcon(dirX + 54.0f, dirY + 44.0f);
+        uiDrawTextCentered(dirX + 62.0f, dirY + 70.0f, "Carpeta SDMC", colWhite);
     } else if(!selectedFile.empty()) {
-        uiDrawDropShadow(boxX, boxY, boxW, boxH, 5.0f, 120);
-
         if(s_show3DArt) {
-            uiDrawBoxart3D(98.0f, 120.0f, 106.0f, gfxGetProjectionTop(), eyeOffset);
-        } else {
+            const float artX = 14.0f;
+            const float artY = 40.0f;
+            const float artW = 160.0f;
+            const float artH = 160.0f;
+
+            uiDrawDropShadow(artX + 4.0f, artY + 6.0f, artW, artH, 7.0f, 160);
             if(s_boxartLoaded && s_boxartTexAllocated) {
-                C3D_TexBind(0, &s_boxartTex);
-                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-                C3D_TexEnvInit(env0);
-                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-                C3D_TexEnvInit(C3D_GetTexEnv(1));
-                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-                C3D_CullFace(GPU_CULL_NONE);
-                C3D_AlphaTest(false, GPU_ALWAYS, 0);
-
-                C3D_ImmDrawBegin(GPU_TRIANGLES);
-                emitUiQuad(boxX, boxY, boxX + boxW, boxY + boxH, 0.0f, 0.0f, 1.0f, 1.0f);
-                C3D_ImmDrawEnd();
-
-                uiDrawRectOutline(boxX, boxY, boxW, boxH, 1.0f, colCardBorder);
+                uiDrawBoxart3D(94.0f, 120.0f, 160.0f, gfxGetProjectionTop(), eyeOffset);
+                uiDrawRectOutline(artX, artY, artW, artH, 1.0f, uiColorRGBA(75, 85, 105, 255));
             } else {
-                bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
-                u32 colCart = isGBC ? uiColorRGBA(55, 60, 75, 255) : uiColorRGBA(150, 150, 150, 255);
-                u32 colCartBorder = isGBC ? uiColorRGBA(85, 95, 120, 255) : uiColorRGBA(190, 190, 190, 255);
-
-                float cartW = 90.0f;
-                float cartH = 106.0f;
-                float cartX = 98.0f - (cartW * 0.5f) + (eyeOffset * 0.5f);
-                float cartY = 120.0f - (cartH * 0.5f);
-
-                uiDrawDropShadow(cartX, cartY, cartW, cartH, 4.0f, 100);
-                uiDrawRect(cartX, cartY, cartW, cartH, colCart);
-                uiDrawRectOutline(cartX, cartY, cartW, cartH, 1.0f, colCartBorder);
-                uiDrawRect(cartX + 8.0f, cartY + 18.0f, 74.0f, 72.0f, uiColorRGBA(24, 34, 52, 255));
-                uiDrawRectOutline(cartX + 8.0f, cartY + 18.0f, 74.0f, 72.0f, 1.0f, colGold);
-
-                uiDrawTextCentered(cartX + (cartW * 0.5f), cartY + 34.0f, "GAME BOY", colWhite);
-                if(isGBC) {
-                    uiDrawTextCentered(cartX + (cartW * 0.5f), cartY + 52.0f, "COLOR", colCyan);
-                }
+                uiDrawRoundedRect(artX, artY, artW, artH, 4.0f, colCardBg, colCardBorder, 1.0f);
+                uiDrawTextCentered(94.0f, 112.0f, "Sin caratula", colGray);
             }
+        } else {
+            bool isGBC = s_metaLoaded ? s_currentMeta.isGBC : (selectedFile.find(".gbc") != std::string::npos || selectedFile.find(".cgb") != std::string::npos);
+            bool isCgbOnly = s_metaLoaded ? s_currentMeta.isCgbOnly : isGBC;
+
+            std::string cartridgeName = selectedFile;
+            if(s_metaLoaded && !s_currentMeta.title.empty()) {
+                cartridgeName += " " + s_currentMeta.title;
+            }
+
+            uiDrawCartridgeLarge(94.0f, 120.0f, eyeOffset, cartridgeName, isGBC, isCgbOnly);
         }
     } else {
         uiDrawTextCentered(98.0f, 115.0f, "Sin seleccion", colGray);

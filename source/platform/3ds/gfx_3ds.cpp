@@ -231,10 +231,10 @@ bool gfxInit() {
 
                 if(x == 7 && y == 7) {
                     // Esquinas: bisel tenue (~81% de brillo)
-                    dst[morton] = 0xFFD0D0D0;
+                    dst[morton] = 0xD0D0D0FF;
                 } else if(x == 7 || y == 7) {
                     // Borde perimetral de 1 texel: sombra de fondo (~92% de brillo)
-                    dst[morton] = 0xFFEAEAEA;
+                    dst[morton] = 0xEAEAEAFF;
                 } else {
                     // Núcleo: blanco puro reflectivo (100%)
                     dst[morton] = 0xFFFFFFFF;
@@ -451,9 +451,9 @@ bool gfxSaveStateThumbnail(const char* thumbPath) {
     }
 
     static u32 thumbBuffer[128 * 128];
-    // Llenar fondo oscuro: RGBA(14, 18, 26, 255) -> 0xFF1A120E en memoria little-endian
+    // Fondo oscuro RGBA(14, 18, 26, 255) en formato 0xRRGGBBAA
     for(int i = 0; i < 128 * 128; i++) {
-        thumbBuffer[i] = 0xFF1A120E;
+        thumbBuffer[i] = 0x0E121AFF;
     }
 
     for(int py = 0; py < 115; py++) {
@@ -472,8 +472,8 @@ bool gfxSaveStateThumbnail(const char* thumbPath) {
             u8 r = (srcPx >> 24) & 0xFF;
             u8 g = (srcPx >> 16) & 0xFF;
             u8 b = (srcPx >> 8) & 0xFF;
-            // Formato RGBA8 en memoria little-endian (R en byte 0, G en 1, B en 2, A en 3)
-            thumbBuffer[dstIdx + px] = (0xFFu << 24) | ((u32)b << 16) | ((u32)g << 8) | (u32)r;
+            // Formato de textura PICA200: 0xRRGGBBAA
+            thumbBuffer[dstIdx + px] = ((u32) r << 24) | ((u32) g << 16) | ((u32) b << 8) | 0xFF;
         }
     }
 
@@ -482,7 +482,7 @@ bool gfxSaveStateThumbnail(const char* thumbPath) {
         return false;
     }
 
-    const char magic[8] = {'G', 'Y', 'T', 'H', 'M', '1', '\0', '\0'};
+    const char magic[8] = {'G', 'Y', 'T', 'H', 'M', '2', '\0', '\0'};
     if(fwrite(magic, 1, 8, f) != 8) {
         fclose(f);
         remove(thumbPath);

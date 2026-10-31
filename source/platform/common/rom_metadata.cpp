@@ -244,6 +244,8 @@ bool fetchRomMetadata(const std::string& romPath, RomMetadata& outMeta) {
         return false;
     }
 
+    outMeta.isCgbOnly = false;
+
     FILE* f = fopen(romPath.c_str(), "rb");
     if(f == nullptr) {
         return false;
@@ -264,6 +266,7 @@ bool fetchRomMetadata(const std::string& romPath, RomMetadata& outMeta) {
     // 1. CGB Flag (0x0143)
     u8 cgbFlag = hdr[0x43];
     outMeta.isGBC = ((cgbFlag & 0x80) != 0 || (cgbFlag & 0xC0) != 0);
+    outMeta.isCgbOnly = (cgbFlag == 0xC0);
 
     // 2. Title (0x0134..0x013E para CGB, 0x0134..0x0143 para DMG)
     int titleLen = outMeta.isGBC ? 11 : 16;
