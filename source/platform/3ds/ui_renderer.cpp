@@ -45,6 +45,8 @@ static bool s_boxartChecked = false;
 static float s_boxartAngleY = 0.0f;
 static bool s_isGBCBox = false;
 
+static const int BOXART_TEX_SIZE = 256;
+
 static C3D_Tex s_savestateTex;
 static bool s_savestateTexAllocated = false;
 static bool s_savestateTexValid = false;
@@ -169,7 +171,7 @@ struct CachedRomEntry {
     uint16_t savestateMask;
     time_t slotMtime[10];
     bool hasSram;
-    std::vector<u32> boxartPixels128;
+    std::vector<u32> boxartPixels256;
     bool boxartChecked;
 
     CachedRomEntry() : savestateMask(0), hasSram(false), boxartChecked(false) {
@@ -432,9 +434,9 @@ void uiRenderInit() {
 
     s_fontAtlasInit = true;
 
-    // Boxart texture 128x128 RGBA8
+    // Boxart texture 256x256 RGBA8
     if(!s_boxartTexAllocated) {
-        if(C3D_TexInit(&s_boxartTex, 128, 128, GPU_RGBA8)) {
+        if(C3D_TexInit(&s_boxartTex, BOXART_TEX_SIZE, BOXART_TEX_SIZE, GPU_RGBA8)) {
             C3D_TexSetFilter(&s_boxartTex, GPU_LINEAR, GPU_LINEAR);
             C3D_TexSetWrap(&s_boxartTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
             s_boxartTexAllocated = true;
@@ -560,8 +562,8 @@ void uiDrawRect(float x, float y, float w, float h, u32 color) {
     C3D_ImmDrawEnd();
 }
 
-static void uiDrawTriangleDown(float centerX, float topY, float width, float height, u32 color) {
-    if(width <= 0.0f || height <= 0.0f) {
+static void uiDrawEllipse2D(float centerX, float centerY, float radiusX, float radiusY, u32 color) {
+    if(radiusX <= 0.0f || radiusY <= 0.0f) {
         return;
     }
 
@@ -583,21 +585,26 @@ static void uiDrawTriangleDown(float centerX, float topY, float width, float hei
     C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
     C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
     C3D_TexEnvColor(env0, color);
-
     C3D_TexEnvInit(C3D_GetTexEnv(1));
 
+    const int segments = 24;
     C3D_ImmDrawBegin(GPU_TRIANGLES);
-    C3D_ImmSendAttrib(centerX - width * 0.5f, topY, 0.5f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    for(int i = 0; i < segments; i++) {
+        float a0 = (2.0f * (float) M_PI * (float) i) / (float) segments;
+        float a1 = (2.0f * (float) M_PI * (float) (i + 1)) / (float) segments;
 
-    C3D_ImmSendAttrib(centerX + width * 0.5f, topY, 0.5f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(centerX, centerY, 0.5f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
 
-    C3D_ImmSendAttrib(centerX, topY + height, 0.5f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(centerX + cosf(a0) * radiusX, centerY + sinf(a0) * radiusY, 0.5f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+
+        C3D_ImmSendAttrib(centerX + cosf(a1) * radiusX, centerY + sinf(a1) * radiusY, 0.5f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    }
     C3D_ImmDrawEnd();
 }
 
@@ -1161,16 +1168,6 @@ static void uiDrawTextCenteredClipped(float centerX, float y, float maxWidth, co
     uiDrawTextClipped(startX, y, maxWidth, text, color);
 }
 
-static void uiDrawTextCenteredScaled(float centerX, float y, float scale, const char* text, u32 color) {
-    if(!text || text[0] == '\0' || scale <= 0.0f) {
-        return;
-    }
-
-    float textWidth = uiGetTextWidth(text, scale);
-    float startX = floorf(centerX - (textWidth * 0.5f) + 0.5f);
-    uiDrawTextScaled(startX, y, scale, text, color);
-}
-
 void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text) {
     (void) scaleX;
     (void) scaleY;
@@ -1199,6 +1196,40 @@ void uiInvalidateBoxart() {
     s_boxartChecked = false;
     s_metaLoaded = false;
     s_lastMetaRom = "";
+}
+
+static u32 sampleBoxartBilinear(const u8* imgData, int imgW, int imgH, float srcX, float srcY) {
+    float floorX = floorf(srcX);
+    float floorY = floorf(srcY);
+    int x0 = (int) floorX;
+    int y0 = (int) floorY;
+    int x1 = x0 + 1;
+    int y1 = y0 + 1;
+
+    float fx = srcX - floorX;
+    float fy = srcY - floorY;
+
+    x0 = std::max(0, std::min(imgW - 1, x0));
+    x1 = std::max(0, std::min(imgW - 1, x1));
+    y0 = std::max(0, std::min(imgH - 1, y0));
+    y1 = std::max(0, std::min(imgH - 1, y1));
+
+    const u8* p00 = imgData + ((y0 * imgW + x0) * 4);
+    const u8* p10 = imgData + ((y0 * imgW + x1) * 4);
+    const u8* p01 = imgData + ((y1 * imgW + x0) * 4);
+    const u8* p11 = imgData + ((y1 * imgW + x1) * 4);
+
+    float w00 = (1.0f - fx) * (1.0f - fy);
+    float w10 = fx * (1.0f - fy);
+    float w01 = (1.0f - fx) * fy;
+    float w11 = fx * fy;
+
+    u8 r = (u8) (p00[0] * w00 + p10[0] * w10 + p01[0] * w01 + p11[0] * w11 + 0.5f);
+    u8 g = (u8) (p00[1] * w00 + p10[1] * w10 + p01[1] * w01 + p11[1] * w11 + 0.5f);
+    u8 b = (u8) (p00[2] * w00 + p10[2] * w10 + p01[2] * w01 + p11[2] * w11 + 0.5f);
+    u8 a = (u8) (p00[3] * w00 + p10[3] * w10 + p01[3] * w01 + p11[3] * w11 + 0.5f);
+
+    return ((u32) r << 24) | ((u32) g << 16) | ((u32) b << 8) | (u32) a;
 }
 
 void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool isGBC, CachedRomEntry* outCacheEntry) {
@@ -1267,34 +1298,44 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
     if(!targetPath.empty() && s_boxartTexAllocated) {
         int imgW = 0, imgH = 0, imgComp = 0;
         u8* imgData = stbi_load(targetPath.c_str(), &imgW, &imgH, &imgComp, STBI_rgb_alpha);
-        if(imgData != nullptr) {
-            u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
+        if(imgData != nullptr && imgW > 0 && imgH > 0) {
+            u32* temp = (u32*) linearAlloc(BOXART_TEX_SIZE * BOXART_TEX_SIZE * sizeof(u32));
             if(temp != nullptr) {
-                for(int y = 0; y < 128; y++) {
-                    int srcY = (y * imgH) / 128;
-                    if(srcY >= imgH) srcY = imgH - 1;
-                    int srcRow = srcY * imgW;
-                    int dstRow = y * 128;
-                    for(int x = 0; x < 128; x++) {
-                        int srcX = (x * imgW) / 128;
-                        if(srcX >= imgW) srcX = imgW - 1;
-                        const u8* srcPx = imgData + ((srcRow + srcX) * 4);
-                        u8 r = srcPx[0];
-                        u8 g = srcPx[1];
-                        u8 b = srcPx[2];
-                        u8 a = srcPx[3];
-                        temp[dstRow + x] = ((u32) r << 24) | ((u32) g << 16) | ((u32) b << 8) | (u32) a;
+                float scale = std::min((float) BOXART_TEX_SIZE / (float) imgW,
+                                       (float) BOXART_TEX_SIZE / (float) imgH);
+                int destW = (int) floorf((float) imgW * scale + 0.5f);
+                int destH = (int) floorf((float) imgH * scale + 0.5f);
+                if(destW < 1) destW = 1;
+                if(destH < 1) destH = 1;
+                if(destW > BOXART_TEX_SIZE) destW = BOXART_TEX_SIZE;
+                if(destH > BOXART_TEX_SIZE) destH = BOXART_TEX_SIZE;
+
+                int offsetX = (BOXART_TEX_SIZE - destW) / 2;
+                int offsetY = (BOXART_TEX_SIZE - destH) / 2;
+
+                for(int y = 0; y < BOXART_TEX_SIZE; y++) {
+                    int dstRow = y * BOXART_TEX_SIZE;
+                    for(int x = 0; x < BOXART_TEX_SIZE; x++) {
+                        int dstIdx = dstRow + x;
+                        if(x < offsetX || x >= offsetX + destW || y < offsetY || y >= offsetY + destH) {
+                            temp[dstIdx] = 0;
+                            continue;
+                        }
+
+                        float srcX = (((float) (x - offsetX) + 0.5f) * (float) imgW / (float) destW) - 0.5f;
+                        float srcY = (((float) (y - offsetY) + 0.5f) * (float) imgH / (float) destH) - 0.5f;
+                        temp[dstIdx] = sampleBoxartBilinear(imgData, imgW, imgH, srcX, srcY);
                     }
                 }
 
                 if(outCacheEntry != nullptr) {
-                    outCacheEntry->boxartPixels128.assign(temp, temp + (128 * 128));
+                    outCacheEntry->boxartPixels256.assign(temp, temp + (BOXART_TEX_SIZE * BOXART_TEX_SIZE));
                 }
 
-                GSPGPU_FlushDataCache(temp, 128 * 128 * sizeof(u32));
+                GSPGPU_FlushDataCache(temp, BOXART_TEX_SIZE * BOXART_TEX_SIZE * sizeof(u32));
                 C3D_SyncDisplayTransfer(
-                    temp, GX_BUFFER_DIM(128, 128),
-                    (u32*) s_boxartTex.data, GX_BUFFER_DIM(128, 128),
+                    temp, GX_BUFFER_DIM(BOXART_TEX_SIZE, BOXART_TEX_SIZE),
+                    (u32*) s_boxartTex.data, GX_BUFFER_DIM(BOXART_TEX_SIZE, BOXART_TEX_SIZE),
                     GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
                     GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                     GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
@@ -1311,7 +1352,7 @@ void uiUpdateBoxart(const char* romPath, const char* romTitle, u8 mbcType, bool 
     s_boxartChecked = true;
     if(outCacheEntry != nullptr) {
         if(!loaded) {
-            outCacheEntry->boxartPixels128.clear();
+            outCacheEntry->boxartPixels256.clear();
         }
         outCacheEntry->boxartChecked = true;
     }
@@ -1378,15 +1419,15 @@ void uiUpdateMenuState() {
                 s_lastMetaRom = currentPath;
                 s_isGBCBox = s_currentMeta.isGBC;
 
-                if(!it->second.boxartPixels128.empty()) {
+                if(!it->second.boxartPixels256.empty()) {
                     if(s_boxartTexAllocated) {
-                        u32* temp = (u32*) linearAlloc(128 * 128 * sizeof(u32));
+                        u32* temp = (u32*) linearAlloc(BOXART_TEX_SIZE * BOXART_TEX_SIZE * sizeof(u32));
                         if(temp != nullptr) {
-                            memcpy(temp, it->second.boxartPixels128.data(), 128 * 128 * sizeof(u32));
-                            GSPGPU_FlushDataCache(temp, 128 * 128 * sizeof(u32));
+                            memcpy(temp, it->second.boxartPixels256.data(), BOXART_TEX_SIZE * BOXART_TEX_SIZE * sizeof(u32));
+                            GSPGPU_FlushDataCache(temp, BOXART_TEX_SIZE * BOXART_TEX_SIZE * sizeof(u32));
                             C3D_SyncDisplayTransfer(
-                                temp, GX_BUFFER_DIM(128, 128),
-                                (u32*) s_boxartTex.data, GX_BUFFER_DIM(128, 128),
+                                temp, GX_BUFFER_DIM(BOXART_TEX_SIZE, BOXART_TEX_SIZE),
+                                (u32*) s_boxartTex.data, GX_BUFFER_DIM(BOXART_TEX_SIZE, BOXART_TEX_SIZE),
                                 GX_TRANSFER_FLIP_VERT(1) | GX_TRANSFER_OUT_TILED(1) | GX_TRANSFER_RAW_COPY(0) |
                                 GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGBA8) |
                                 GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO)
@@ -1576,6 +1617,158 @@ static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
     C3D_ImmSendAttrib(p3.x, p3.y, p3.z, 1.0f); C3D_ImmSendAttrib(uv3.u, uv3.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
 }
+
+static inline void emitSolidVertex3D(float x, float y, float z) {
+    C3D_ImmSendAttrib(x, y, z, 1.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+}
+
+static void emitSolidQuad3D(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, u32 color) {
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvColor(env0, color);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    Vec2 uv = {0.0f, 0.0f};
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    emitQuad3D(p0, uv, p1, uv, p2, uv, p3, uv);
+    C3D_ImmDrawEnd();
+}
+
+static void emitSolidRect3D(float x0, float y0, float x1, float y1, float z, u32 color) {
+    Vec3 p0 = {x0, y0, z};
+    Vec3 p1 = {x1, y0, z};
+    Vec3 p2 = {x1, y1, z};
+    Vec3 p3 = {x0, y1, z};
+    emitSolidQuad3D(p0, p1, p2, p3, color);
+}
+
+static void emitSolidTriangle3D(Vec3 p0, Vec3 p1, Vec3 p2, u32 color) {
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvColor(env0, color);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    emitSolidVertex3D(p0.x, p0.y, p0.z);
+    emitSolidVertex3D(p1.x, p1.y, p1.z);
+    emitSolidVertex3D(p2.x, p2.y, p2.z);
+    C3D_ImmDrawEnd();
+}
+
+static void emitSolidEllipse3D(float cx, float cy, float rx, float ry, float z, u32 color, int segments) {
+    if(rx <= 0.0f || ry <= 0.0f || segments < 3) {
+        return;
+    }
+
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvColor(env0, color);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    for(int i = 0; i < segments; i++) {
+        float a0 = (2.0f * (float) M_PI * (float) i) / (float) segments;
+        float a1 = (2.0f * (float) M_PI * (float) (i + 1)) / (float) segments;
+        emitSolidVertex3D(cx, cy, z);
+        emitSolidVertex3D(cx + cosf(a0) * rx, cy + sinf(a0) * ry, z);
+        emitSolidVertex3D(cx + cosf(a1) * rx, cy + sinf(a1) * ry, z);
+    }
+    C3D_ImmDrawEnd();
+}
+
+static void uiEmitText3D(float centerX, float centerY, float scale, const char* text, u32 color, float z) {
+    if(!text || text[0] == '\0' || !s_fontAtlasInit || scale <= 0.0f) {
+        return;
+    }
+
+    C3D_TexBind(0, &s_fontAtlasTex);
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_RGB, GPU_TEXTURE0, GPU_CONSTANT, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_RGB, GPU_MODULATE);
+    C3D_TexEnvSrc(env0, C3D_Alpha, GPU_TEXTURE0, GPU_CONSTANT, (GPU_TEVSRC)0);
+    C3D_TexEnvFunc(env0, C3D_Alpha, GPU_MODULATE);
+    C3D_TexEnvColor(env0, color);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_AlphaTest(true, GPU_GREATER, 0);
+
+    float textWidth = uiGetTextWidth(text, scale);
+    float penX = centerX - (textWidth * 0.5f);
+    float penY = centerY - (14.0f * scale * 0.5f);
+
+    C3D_ImmDrawBegin(GPU_TRIANGLES);
+    const char* p = text;
+    while(*p != '\0') {
+        uint8_t c = (uint8_t) *p;
+        if(c == ' ') {
+            penX += floorf(s_glyphAdvance[' '] * scale + 0.5f);
+            p++;
+            continue;
+        }
+        if(c < 32 || c == 127) {
+            p++;
+            continue;
+        }
+
+        if((c & 0x80) != 0) {
+            c = getNextGlyph(p);
+            if(c == 0) {
+                continue;
+            }
+            if(c == ' ') {
+                penX += floorf(s_glyphAdvance[' '] * scale + 0.5f);
+                continue;
+            }
+        } else {
+            p++;
+        }
+
+        if(s_glyphWidth[c] <= 0.0f) {
+            continue;
+        }
+
+        int cellX = (c & 0x0F) * 16;
+        int cellY = (c >> 4) * 16;
+        float gw = s_glyphWidth[c];
+        const int gh = 14;
+
+        float u0 = (float) (cellX + 1) / 256.0f;
+        float u1 = (float) (cellX + 1 + (int) gw) / 256.0f;
+        float v0 = (float) cellY / 256.0f;
+        float v1 = (float) (cellY + gh) / 256.0f;
+
+        float x0 = penX;
+        float x1 = penX + gw * scale;
+        float y0 = penY;
+        float y1 = penY + (float) gh * scale;
+
+        Vec3 p0 = {x0, y0, z};
+        Vec3 p1 = {x1, y0, z};
+        Vec3 p2 = {x1, y1, z};
+        Vec3 p3 = {x0, y1, z};
+        Vec2 uv0 = {u0, v0};
+        Vec2 uv1 = {u1, v0};
+        Vec2 uv2 = {u1, v1};
+        Vec2 uv3 = {u0, v1};
+        emitQuad3D(p0, uv0, p1, uv1, p2, uv2, p3, uv3);
+        penX += floorf(s_glyphAdvance[c] * scale + 0.5f);
+    }
+    C3D_ImmDrawEnd();
+
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+}
+
+static float s_cartridgeAnimTimer = 0.0f;
 
 static bool s_show3DArt = true;
 static bool s_showSynopsis = true;
@@ -1794,70 +1987,104 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
 
 static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
                                  const std::string& romName, bool isGBC, bool isCgbOnly) {
-    const float cartW = 144.0f;
-    const float cartH = 168.0f;
-    const float parallax = eyeOffset * 0.6f;
-    const float cartX = centerX - (cartW * 0.5f) + parallax;
-    const float cartY = centerY - (cartH * 0.5f);
+    const float floatY = sinf(s_cartridgeAnimTimer * 1.8f) * 3.5f;
+    const float floatRotZ = sinf(s_cartridgeAnimTimer * 1.2f) * 1.2f;
+    const float bodyW = 138.0f;
+    const float bodyH = 160.0f;
+    const float halfW = bodyW * 0.5f;
+    const float halfH = bodyH * 0.5f;
+    const float depth = 14.0f;
 
     CartridgePalette palette = getAuthenticCartridgeColors(romName, isGBC, isCgbOnly);
 
-    uiDrawDropShadow(cartX + 4.0f - parallax * 0.2f, cartY + 6.0f, cartW, cartH, 6.0f, 150);
-    uiDrawRoundedRect(cartX, cartY, cartW, cartH, 3.0f, palette.bodyColor, palette.shadowColor, 1.0f);
+    float shadowSquash = 1.0f - (floatY / 3.5f) * 0.08f;
+    float shadowAlpha = 110.0f - (floatY / 3.5f) * 12.0f;
+    if(shadowAlpha < 0.0f) shadowAlpha = 0.0f;
+    if(shadowAlpha > 255.0f) shadowAlpha = 255.0f;
+    uiDrawEllipse2D(centerX + eyeOffset * 2.0f, 198.0f - floatY * 0.35f,
+                    68.0f * shadowSquash, 10.0f * shadowSquash,
+                    uiColorRGBA(8, 10, 16, (u8) shadowAlpha));
 
-    // Biseles de plástico
-    uiDrawRect(cartX + 4.0f, cartY + 1.0f, cartW - 8.0f, 2.0f, palette.highlightColor);
-    uiDrawRect(cartX + 1.0f, cartY + 4.0f, 2.0f, cartH - 8.0f, palette.highlightColor);
-    uiDrawRect(cartX + 4.0f, cartY + cartH - 3.0f, cartW - 8.0f, 2.0f, palette.shadowColor);
-    uiDrawRect(cartX + cartW - 3.0f, cartY + 4.0f, 2.0f, cartH - 8.0f, palette.shadowColor);
+    C3D_Mtx modelView;
+    Mtx_Identity(&modelView);
+    Mtx_Translate(&modelView, centerX + eyeOffset * 4.0f, centerY + floatY, 0.5f, true);
+    Mtx_Scale(&modelView, 1.0f, 1.0f, 0.005f);
+    Mtx_RotateX(&modelView, 11.0f * (M_PI / 180.0f), true);
+    Mtx_RotateY(&modelView, -17.0f * (M_PI / 180.0f), true);
+    Mtx_RotateZ(&modelView, (-6.0f + floatRotZ) * (M_PI / 180.0f), true);
 
+    const C3D_Mtx* proj = gfxGetProjectionTop();
+    int uLocProj = gfxGetULocProjection();
+    C3D_Mtx mvp;
+    Mtx_Multiply(&mvp, proj, &modelView);
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProj, &mvp);
+
+    C3D_DepthTest(true, GPU_GEQUAL, GPU_WRITE_ALL);
+    C3D_CullFace(GPU_CULL_NONE);
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+    Vec3 FTL = {-halfW, -halfH, 0.0f};
+    Vec3 FTR = { halfW, -halfH, 0.0f};
+    Vec3 FBR = { halfW,  halfH, 0.0f};
+    Vec3 FBL = {-halfW,  halfH, 0.0f};
+    Vec3 BTL = {-halfW, -halfH, -depth};
+    Vec3 BTR = { halfW, -halfH, -depth};
+    Vec3 BBR = { halfW,  halfH, -depth};
+    Vec3 BBL = {-halfW,  halfH, -depth};
+
+    // Volumen extruido: dorso, canto izquierdo, canto superior y cantos oscuros
+    emitSolidQuad3D(BTL, BTR, BBR, BBL, palette.shadowColor);
+    emitSolidQuad3D(FTL, BTL, BBL, FBL, palette.shadowColor);
+    emitSolidQuad3D(FTL, FTR, BTR, BTL, palette.highlightColor);
+    emitSolidQuad3D(FTR, BTR, BBR, FBR, palette.shadowColor);
+    emitSolidQuad3D(FBL, FBR, BBR, BBL, palette.shadowColor);
+
+    // Cara frontal y biseles exteriores
+    emitSolidQuad3D(FTL, FTR, FBR, FBL, palette.bodyColor);
+    emitSolidRect3D(-halfW, -halfH, halfW, -halfH + 2.0f, 0.1f, palette.highlightColor);
+    emitSolidRect3D(-halfW, -halfH, -halfW + 2.0f, halfH, 0.1f, palette.highlightColor);
+    emitSolidRect3D(-halfW, halfH - 2.0f, halfW, halfH, 0.1f, palette.shadowColor);
+    emitSolidRect3D(halfW - 2.0f, -halfH, halfW, halfH, 0.1f, palette.shadowColor);
+
+    const float topCenterY = -halfH + 13.0f;
     if(isGBC && isCgbOnly) {
         // Cabezal convexo del Game Boy Color
-        uiDrawRoundedRect(cartX + 6.0f, cartY + 1.0f, cartW - 12.0f, 20.0f, 8.0f,
-                          palette.bodyColor, palette.highlightColor, 1.0f);
-        uiDrawRect(cartX + 12.0f, cartY + 3.0f, cartW - 24.0f, 1.0f, palette.highlightColor);
-
-        uiDrawRoundedRect(centerX - 52.0f + parallax, cartY + 4.0f, 104.0f, 16.0f, 8.0f,
-                          palette.shadowColor, palette.highlightColor, 1.0f);
-        uiDrawTextCenteredScaled(centerX + parallax, cartY + 7.0f, 0.8f, "GAME BOY COLOR", palette.highlightColor);
+        emitSolidEllipse3D(0.0f, -halfH + 2.0f, 60.0f, 7.0f, 0.2f, palette.bodyColor, 24);
+        emitSolidEllipse3D(0.0f, -halfH, 46.0f, 3.0f, 0.25f, palette.highlightColor, 20);
+        emitSolidEllipse3D(0.0f, topCenterY, 38.0f, 7.0f, 0.3f, palette.shadowColor, 20);
+        emitSolidEllipse3D(0.0f, topCenterY, 34.0f, 5.0f, 0.35f, palette.highlightColor, 20);
+        uiEmitText3D(0.0f, topCenterY, 0.45f, "GAME BOY COLOR", palette.shadowColor, 0.4f);
     } else {
-        // Estrías de agarre y muesca escalonada del Game Boy / Dual-Mode
+        // Estrías de agarre, muesca y óvalo del Game Boy / Dual-Mode
         for(int i = 0; i < 5; i++) {
-            uiDrawRect(cartX + 7.0f, cartY + 6.0f + (float) i * 3.0f, 12.0f, 1.0f, palette.shadowColor);
-            uiDrawRect(cartX + 7.0f, cartY + 7.0f + (float) i * 3.0f, 12.0f, 1.0f, uiColorRGBA(255, 255, 255, 35));
+            float gy = -halfH + 6.0f + (float) i * 3.0f;
+            emitSolidRect3D(-halfW + 7.0f, gy, -halfW + 21.0f, gy + 1.0f, 0.2f, palette.shadowColor);
+            emitSolidRect3D(-halfW + 7.0f, gy + 1.0f, -halfW + 21.0f, gy + 2.0f, 0.2f, palette.highlightColor);
         }
 
-        uiDrawRect(cartX + cartW - 18.0f, cartY, 18.0f, 8.0f, uiColorRGBA(10, 14, 20, 255));
-        uiDrawRect(cartX + cartW - 12.0f, cartY + 8.0f, 12.0f, 4.0f, uiColorRGBA(10, 14, 20, 255));
+        emitSolidRect3D(halfW - 24.0f, -halfH, halfW, -halfH + 8.0f, 0.2f, uiColorRGBA(10, 14, 20, 255));
+        emitSolidRect3D(halfW - 18.0f, -halfH + 8.0f, halfW, -halfH + 12.0f, 0.2f, uiColorRGBA(10, 14, 20, 255));
 
-        uiDrawRoundedRect(centerX - 52.0f + parallax, cartY + 2.0f, 104.0f, 16.0f, 8.0f,
-                          palette.shadowColor, palette.highlightColor, 1.0f);
-        uiDrawTextCenteredScaled(centerX + parallax, cartY + 4.0f, 0.8f, "Nintendo GAME BOY", palette.highlightColor);
+        emitSolidEllipse3D(0.0f, topCenterY, 38.0f, 7.0f, 0.3f, palette.shadowColor, 20);
+        emitSolidEllipse3D(0.0f, topCenterY, 34.0f, 5.0f, 0.35f, palette.highlightColor, 20);
+        uiEmitText3D(0.0f, topCenterY, 0.45f, "Nintendo GAME BOY", palette.shadowColor, 0.4f);
     }
 
-    if(palette.isTranslucent) {
-        uiDrawRect(cartX + 6.0f, cartY + 6.0f, cartW - 12.0f, 3.0f, uiColorRGBA(255, 255, 255, 32));
-    }
-
-    // Etiqueta central 118x108
-    const float labelX = cartX + 13.0f;
-    const float labelY = cartY + 30.0f;
-    const float labelW = 118.0f;
-    const float labelH = 108.0f;
-    const float bandW = 16.0f;
+    const float labelX = -56.0f;
+    const float labelY = -50.0f;
+    const float labelW = 112.0f;
+    const float labelH = 102.0f;
+    const float bandW = 14.0f;
     const float mainX = labelX + bandW;
-    const float mainY = labelY;
     const float mainW = labelW - bandW;
-    const float mainH = labelH;
 
-    uiDrawRect(labelX - 2.0f, labelY - 2.0f, labelW + 4.0f, labelH + 4.0f, uiColorRGBA(15, 18, 24, 255));
-    uiDrawRect(labelX, labelY, labelW, labelH, uiColorRGBA(232, 232, 236, 255));
-    uiDrawRect(labelX, labelY, bandW, labelH, palette.highlightColor);
-    uiDrawRect(labelX + bandW - 2.0f, labelY, 2.0f, labelH, palette.shadowColor);
-
-    // Distintivo compacto de la franja lateral
-    uiDrawRect(labelX + 4.0f, labelY + 12.0f, 8.0f, 8.0f, palette.shadowColor);
-    uiDrawRect(labelX + 6.0f, labelY + 14.0f, 4.0f, 4.0f, palette.highlightColor);
+    // Ventana de etiqueta hundida con franja lateral
+    emitSolidRect3D(labelX - 2.0f, labelY - 2.0f, labelX + labelW + 2.0f, labelY + labelH + 2.0f, 0.3f, uiColorRGBA(15, 18, 24, 255));
+    emitSolidRect3D(labelX, labelY, labelX + labelW, labelY + labelH, 0.4f, uiColorRGBA(232, 232, 236, 255));
+    emitSolidRect3D(labelX, labelY, labelX + bandW, labelY + labelH, 0.45f, palette.highlightColor);
+    emitSolidRect3D(labelX + bandW - 1.0f, labelY, labelX + bandW, labelY + labelH, 0.46f, palette.shadowColor);
+    uiEmitText3D(labelX + bandW * 0.5f, labelY + 25.0f, 0.22f, isGBC ? "CGB" : "GB", palette.shadowColor, 0.5f);
 
     if(s_boxartLoaded && s_boxartTexAllocated) {
         C3D_TexBind(0, &s_boxartTex);
@@ -1866,47 +2093,56 @@ static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
         C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
         C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
         C3D_TexEnvInit(C3D_GetTexEnv(1));
-        C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
-        C3D_CullFace(GPU_CULL_NONE);
         C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
+        Vec3 l0 = {mainX, labelY, 0.6f};
+        Vec3 l1 = {mainX + mainW, labelY, 0.6f};
+        Vec3 l2 = {mainX + mainW, labelY + labelH, 0.6f};
+        Vec3 l3 = {mainX, labelY + labelH, 0.6f};
+        Vec2 uv0 = {0.0f, 0.0f};
+        Vec2 uv1 = {1.0f, 0.0f};
+        Vec2 uv2 = {1.0f, 1.0f};
+        Vec2 uv3 = {0.0f, 1.0f};
         C3D_ImmDrawBegin(GPU_TRIANGLES);
-        emitUiQuad(mainX, mainY, mainX + mainW, mainY + mainH, 0.0f, 0.0f, 1.0f, 1.0f);
+        emitQuad3D(l0, uv0, l1, uv1, l2, uv2, l3, uv3);
         C3D_ImmDrawEnd();
     } else {
-        uiDrawRect(mainX, mainY, mainW, mainH, uiColorRGBA(30, 34, 42, 255));
+        emitSolidRect3D(mainX, labelY, mainX + mainW, labelY + labelH, 0.6f, uiColorRGBA(30, 34, 42, 255));
         std::string label = romName.empty() ? "GAME BOY" : romName;
-        uiDrawTextCenteredClipped(mainX + (mainW * 0.5f), mainY + 42.0f, mainW - 8.0f, label.c_str(), palette.highlightColor);
+        float labelScale = 0.42f;
+        float labelWidth = uiGetTextWidth(label.c_str(), labelScale);
+        if(labelWidth > mainW - 8.0f && labelWidth > 0.0f) {
+            labelScale *= (mainW - 8.0f) / labelWidth;
+        }
+        uiEmitText3D(mainX + mainW * 0.5f, labelY + labelH * 0.5f, labelScale, label.c_str(), palette.highlightColor, 0.65f);
     }
 
-    uiDrawRectOutline(mainX, mainY, mainW, mainH, 1.0f, palette.shadowColor);
+    // Reflejo diagonal laminado
+    Vec3 g0 = {mainX + mainW * 0.54f, labelY, 0.7f};
+    Vec3 g1 = {mainX + mainW * 0.70f, labelY, 0.7f};
+    Vec3 g2 = {mainX + mainW * 0.84f, labelY + labelH, 0.7f};
+    Vec3 g3 = {mainX + mainW * 0.68f, labelY + labelH, 0.7f};
+    emitSolidQuad3D(g0, g1, g2, g3, uiColorRGBA(255, 255, 255, 32));
 
-    // Reflejo diagonal sutil de plástico laminado
+    // Muescas inferiores y triángulo indicador
+    emitSolidRect3D(-halfW + 2.0f, halfH - 10.0f, -halfW + 8.0f, halfH, 0.25f, palette.shadowColor);
+    emitSolidRect3D(halfW - 8.0f, halfH - 10.0f, halfW - 2.0f, halfH, 0.25f, palette.shadowColor);
+    Vec3 t0 = {-6.0f, halfH - 10.0f, 0.3f};
+    Vec3 t1 = { 6.0f, halfH - 10.0f, 0.3f};
+    Vec3 t2 = { 0.0f, halfH - 2.0f, 0.3f};
+    emitSolidTriangle3D(t0, t1, t2, uiColorRGBA(10, 14, 20, 255));
+
+    // Restaurar proyección y estado de rasterizador
+    C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLocProj, proj);
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
     C3D_CullFace(GPU_CULL_NONE);
-    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
-    C3D_AlphaTest(true, GPU_GREATER, 0);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
     C3D_TexEnv* env0 = C3D_GetTexEnv(0);
     C3D_TexEnvInit(env0);
     C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
     C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-    C3D_TexEnvColor(env0, uiColorRGBA(255, 255, 255, 22));
     C3D_TexEnvInit(C3D_GetTexEnv(1));
-
-    Vec3 g0 = {mainX + mainW * 0.54f, mainY, 0.5f};
-    Vec3 g1 = {mainX + mainW * 0.70f, mainY, 0.5f};
-    Vec3 g2 = {mainX + mainW * 0.84f, mainY + mainH, 0.5f};
-    Vec3 g3 = {mainX + mainW * 0.68f, mainY + mainH, 0.5f};
-    Vec2 uv = {0.0f, 0.0f};
-    C3D_ImmDrawBegin(GPU_TRIANGLES);
-    emitQuad3D(g0, uv, g1, uv, g2, uv, g3, uv);
-    C3D_ImmDrawEnd();
-
-    // Muescas inferiores y triángulo indicador
-    uiDrawRect(cartX + 2.0f, cartY + cartH - 14.0f, 6.0f, 10.0f, palette.shadowColor);
-    uiDrawRect(cartX + cartW - 8.0f, cartY + cartH - 14.0f, 6.0f, 10.0f, palette.shadowColor);
-    uiDrawTriangleDown(centerX + parallax, cartY + cartH - 12.0f, 12.0f, 8.0f, uiColorRGBA(10, 14, 20, 255));
 }
 
 // =============================================================================
@@ -3068,6 +3304,10 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 }
 
 void uiDrawTopScreenHub(float eyeOffset) {
+    if(eyeOffset <= 0.0f) {
+        s_cartridgeAnimTimer += 0.025f;
+    }
+
     const u32 colSlateBg = uiColorRGBA(22, 28, 40, 255);      // Azul Pizarra Profundo
     const u32 colBarBg = uiColorRGBA(13, 16, 23, 255);        // Rectángulo sólido oscuro de barras
     const u32 colBarLine = uiColorRGBA(38, 48, 66, 255);      // Línea sutil de barras
@@ -3175,7 +3415,21 @@ void uiDrawTopScreenHub(float eyeOffset) {
 
             uiDrawDropShadow(artX + 4.0f, artY + 6.0f, artW, artH, 7.0f, 160);
             if(s_boxartLoaded && s_boxartTexAllocated) {
-                uiDrawBoxart3D(94.0f, 120.0f, 160.0f, gfxGetProjectionTop(), eyeOffset);
+                C3D_TexBind(0, &s_boxartTex);
+                C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+                C3D_TexEnvInit(env0);
+                C3D_TexEnvSrc(env0, C3D_Both, GPU_TEXTURE0, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+                C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+                C3D_TexEnvInit(C3D_GetTexEnv(1));
+                C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
+                C3D_CullFace(GPU_CULL_NONE);
+                C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+                C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+                C3D_ImmDrawBegin(GPU_TRIANGLES);
+                emitUiQuad(artX, artY, artX + artW, artY + artH, 0.0f, 0.0f, 1.0f, 1.0f);
+                C3D_ImmDrawEnd();
+
                 uiDrawRectOutline(artX, artY, artW, artH, 1.0f, uiColorRGBA(75, 85, 105, 255));
             } else {
                 uiDrawRoundedRect(artX, artY, artW, artH, 4.0f, colCardBg, colCardBorder, 1.0f);
@@ -3190,7 +3444,7 @@ void uiDrawTopScreenHub(float eyeOffset) {
                 cartridgeName += " " + s_currentMeta.title;
             }
 
-            uiDrawCartridgeLarge(94.0f, 120.0f, eyeOffset, cartridgeName, isGBC, isCgbOnly);
+            uiDrawCartridgeLarge(96.0f, 118.0f, eyeOffset, cartridgeName, isGBC, isCgbOnly);
         }
     } else {
         uiDrawTextCentered(98.0f, 115.0f, "Sin seleccion", colGray);

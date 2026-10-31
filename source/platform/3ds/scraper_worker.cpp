@@ -305,7 +305,7 @@ static bool downloadWithCurl(const std::string& url, const std::string& outPath,
     curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
     curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L);
     curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT_MS, 3000L);
-    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 8000L);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 15000L);
     curl_easy_setopt(curl, CURLOPT_USERAGENT, "GameYob3DS/1.0");
     curl_easy_setopt(curl, CURLOPT_FAILONERROR, 0L);
     curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L);
@@ -648,14 +648,7 @@ static void scraperThreadFunc(void* arg) {
         bool downloaded = false;
 
 #ifdef HAVE_LIBCURL
-        // FUENTE 1: GitHub Raw HTTPS (TLS moderno por software vía libcurl + mbedtls en Core 1)
-        if(!downloaded && s_scraperRunning) {
-            s_lastActivityTime = osGetTime();
-            std::string ghUrl = "https://raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName;
-            downloaded = downloadWithCurl(ghUrl, targetPng, job.romPath, &s_scraperRunning);
-        }
-
-        // FUENTE 2: CDN Libretro HTTPS
+        // FUENTE 1: CDN Libretro HTTPS con boxarts oficiales de resolución completa
         if(!downloaded && s_scraperRunning) {
             LightLock_Lock(&s_queueLock);
             bool preempted = (s_activeRomPath != job.romPath);
@@ -668,27 +661,34 @@ static void scraperThreadFunc(void* arg) {
             }
         }
 
-        // FUENTE 3a: Proxy images.weserv.nl vía libcurl (Puerto 80 HTTP, 128x128)
+        // FUENTE 2: GitHub Raw HTTPS (TLS moderno por software vía libcurl + mbedtls en Core 1)
+        if(!downloaded && s_scraperRunning) {
+            s_lastActivityTime = osGetTime();
+            std::string ghUrl = "https://raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName;
+            downloaded = downloadWithCurl(ghUrl, targetPng, job.romPath, &s_scraperRunning);
+        }
+
+        // FUENTE 3a: Proxy images.weserv.nl vía libcurl (Puerto 80 HTTP, tamaño original)
         if(!downloaded && s_scraperRunning) {
             LightLock_Lock(&s_queueLock);
             bool preempted = (s_activeRomPath != job.romPath);
             LightLock_Unlock(&s_queueLock);
             if(!preempted) {
                 s_lastActivityTime = osGetTime();
-                std::string weservUrl = "http://images.weserv.nl/?url=raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName + "&w=128&h=128&output=png";
+                std::string weservUrl = "http://images.weserv.nl/?url=raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName + "&output=png";
                 downloaded = downloadWithCurl(weservUrl, targetPng, job.romPath, &s_scraperRunning);
             }
         }
 #endif
 
-        // FUENTE 3b: Fallback de Socket BSD no-bloqueante corregido (Puerto 80 HTTP)
+        // FUENTE 3b: Fallback de Socket BSD no-bloqueante corregido (Puerto 80 HTTP, tamaño original)
         if(!downloaded && s_scraperRunning) {
             LightLock_Lock(&s_queueLock);
             bool preempted = (s_activeRomPath != job.romPath);
             LightLock_Unlock(&s_queueLock);
             if(!preempted) {
                 s_lastActivityTime = osGetTime();
-                std::string weservPath = "/?url=raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName + "&w=128&h=128&output=png";
+                std::string weservPath = "/?url=raw.githubusercontent.com/libretro-thumbnails/" + repoName + "/master/Named_Boxarts/" + encodedFileName + "&output=png";
                 downloaded = downloadWithSocket("images.weserv.nl", weservPath, targetPng, job.romPath, &s_scraperRunning);
             }
         }
