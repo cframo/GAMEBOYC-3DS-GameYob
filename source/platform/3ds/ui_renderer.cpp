@@ -14,6 +14,7 @@
 #include <strings.h>
 
 #include <3ds.h>
+#include <3ds/archive.h>
 #include <3ds/font.h>
 #include <3ds/util/utf.h>
 #include <citro3d.h>
@@ -63,6 +64,24 @@ static std::string uiGetThumbPath(const std::string& romPath, int slot) {
     char path[512];
     mgrGetRomThumbPath(romPath.c_str(), slot, path, sizeof(path));
     return std::string(path);
+}
+
+static time_t getFileRealMtime3DS(const char* path) {
+    if(!path || !path[0]) {
+        return 0;
+    }
+
+    u64 mtime = 0;
+    if(R_SUCCEEDED(archive_getmtime(path, &mtime)) && mtime > 0) {
+        return (time_t) mtime;
+    }
+
+    struct stat st;
+    if(stat(path, &st) == 0 && st.st_mtime > 0) {
+        return st.st_mtime;
+    }
+
+    return 0;
 }
 
 static void uiCaptureStateThumbnail(int slot) {
@@ -148,11 +167,16 @@ void uiAdjustRightPanelOption(int dir) {
 struct CachedRomEntry {
     RomMetadata meta;
     uint16_t savestateMask;
+    time_t slotMtime[10];
     bool hasSram;
     std::vector<u32> boxartPixels128;
     bool boxartChecked;
 
-    CachedRomEntry() : savestateMask(0), hasSram(false), boxartChecked(false) {}
+    CachedRomEntry() : savestateMask(0), hasSram(false), boxartChecked(false) {
+        for(int i = 0; i < 10; i++) {
+            this->slotMtime[i] = 0;
+        }
+    }
 };
 
 static std::unordered_map<std::string, CachedRomEntry> s_romCache;
@@ -987,6 +1011,20 @@ void uiDrawTextClipped(float x, float y, float maxWidth, const char* text, u32 c
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
 }
 
+static void uiDrawTextCenteredClipped(float centerX, float y, float maxWidth, const char* text, u32 color) {
+    if(!text || text[0] == '\0' || maxWidth <= 0.0f) {
+        return;
+    }
+
+    float textWidth = uiGetTextWidth(text, 1.0f);
+    if(textWidth > maxWidth) {
+        textWidth = maxWidth;
+    }
+
+    float startX = floorf(centerX - (textWidth * 0.5f) + 0.5f);
+    uiDrawTextClipped(startX, y, maxWidth, text, color);
+}
+
 void uiDrawSysText(float x, float y, float scaleX, float scaleY, u32 color, const char* text) {
     (void) scaleX;
     (void) scaleY;
@@ -1248,6 +1286,11 @@ void uiUpdateMenuState() {
                 std::string sf = uiGetStatePath(currentPath, s);
                 if(stat(sf.c_str(), &st) == 0 && st.st_size > 0) {
                     mask |= (1 << s);
+                    entry.slotMtime[s] = getFileRealMtime3DS(sf.c_str());
+                    if(entry.slotMtime[s] == 0) {
+                        std::string tf = uiGetThumbPath(currentPath, s);
+                        entry.slotMtime[s] = getFileRealMtime3DS(tf.c_str());
+                    }
                 }
             }
             entry.savestateMask = mask;
@@ -1263,6 +1306,7 @@ void uiUpdateMenuState() {
         }
     }
 
+    // Actualizar la miniatura siempre, incluso si los metadatos vienen de s_romCache.
     updateSavestateThumbnail(currentPath, s_previewSlot);
 }
 
@@ -1285,7 +1329,11 @@ static void updateSavestateThumbnail(const std::string& currentPath, int slot) {
     struct stat stState;
     if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
         slotHasState = true;
-        stateMtime = stState.st_mtime;
+        stateMtime = getFileRealMtime3DS(stateFile.c_str());
+        if(stateMtime == 0) {
+            std::string thumbFile = uiGetThumbPath(currentPath, slot);
+            stateMtime = getFileRealMtime3DS(thumbFile.c_str());
+        }
     }
 
     std::string thumbKey = baseKey + "#" + std::to_string((long long)stateMtime);
@@ -2328,7 +2376,7 @@ void uiDrawFileChooser(const FileChooser* chooser) {
     int firstIdx = (int)(scrollY / 24.0f);
     if(firstIdx < 0) firstIdx = 0;
 
-    float textMaxW = isPreview ? 140.0f : 82.0f;
+    float textMaxW = isPreview ? 132.0f : 74.0f;
 
     for(int i = firstIdx; i < numFiles; i++) {
         float itemY = listY + 2.0f + (float)i * 24.0f - scrollY;
@@ -2417,16 +2465,23 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
     bool hasState = false;
     bool hasSav = false;
+    time_t stateMtime = 0;
     if(!currentSelectedRom.empty() && !isCurrentDir) {
         auto it = s_romCache.find(currentSelectedRom);
         if(it != s_romCache.end()) {
             hasState = (it->second.savestateMask & (1 << s_previewSlot)) != 0;
             hasSav = it->second.hasSram;
+            stateMtime = it->second.slotMtime[s_previewSlot];
         } else {
             std::string stateFile = uiGetStatePath(currentSelectedRom, s_previewSlot);
             struct stat stState;
             if(stat(stateFile.c_str(), &stState) == 0 && stState.st_size > 0) {
                 hasState = true;
+                stateMtime = getFileRealMtime3DS(stateFile.c_str());
+                if(stateMtime == 0) {
+                    std::string thumbFile = uiGetThumbPath(currentSelectedRom, s_previewSlot);
+                    stateMtime = getFileRealMtime3DS(thumbFile.c_str());
+                }
             }
             std::string savFile = currentSelectedRom + ".sav";
             struct stat stSav;
@@ -2440,14 +2495,14 @@ void uiDrawFileChooser(const FileChooser* chooser) {
         // ==========================================
         // MODO 0: VISTA PREVIA (panelW = 118 px, panelX = 194)
         // ==========================================
-        float centerX = panelX + panelW * 0.5f; // 253.0f
+        float centerX = 252.0f;
 
         if(hasState) {
-            uiDrawTextCentered(centerX, 28.0f, "CAPTURA DE GUARDADO", colAmber);
+            uiDrawTextCenteredClipped(centerX, 28.0f, 118.0f, "ESTADO GUARDADO", colAmber);
         } else if(s_previewSlot == 0) {
-            uiDrawTextCentered(centerX, 28.0f, "VISTA PREVIA", colAmber);
+            uiDrawTextCenteredClipped(centerX, 28.0f, 118.0f, "VISTA PREVIA", colAmber);
         } else {
-            uiDrawTextCentered(centerX, 28.0f, "RANURA DE GUARDADO", colAmber);
+            uiDrawTextCenteredClipped(centerX, 28.0f, 118.0f, "RANURA VACIA", colAmber);
         }
         uiDrawRect(panelX + 4.0f, 40.0f, panelW - 8.0f, 1.0f, colAmber);
 
@@ -2536,65 +2591,47 @@ void uiDrawFileChooser(const FileChooser* chooser) {
 
         // Título del juego / Metadatos del estado
         if(hasState) {
-            std::string stateFile = uiGetStatePath(currentSelectedRom, s_previewSlot);
-            struct stat stState;
             char dateBuf[32] = "";
-            if(stat(stateFile.c_str(), &stState) == 0) {
-                struct tm* tmInfo = localtime(&stState.st_mtime);
+            if(stateMtime > (time_t) 946684800) {
+                struct tm* tmInfo = localtime(&stateMtime);
                 if(tmInfo != nullptr) {
                     strftime(dateBuf, sizeof(dateBuf), "%d/%m/%Y %H:%M", tmInfo);
                 }
             }
             if(dateBuf[0] != '\0') {
-                uiDrawTextCentered(centerX, 138.0f, dateBuf, colWhite);
+                uiDrawTextCenteredClipped(centerX, 138.0f, 118.0f, dateBuf, colWhite);
             } else {
-                uiDrawTextCentered(centerX, 138.0f, "Partida Guardada", colWhite);
+                uiDrawTextCenteredClipped(centerX, 138.0f, 118.0f, "Partida disponible", colWhite);
             }
 
             std::string cleanName = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : baseSelectedName;
             if(!cleanName.empty()) {
-                float tw = uiGetTextWidth(cleanName.c_str(), 1.0f);
-                if(tw > 106.0f) tw = 106.0f;
-                float startX = centerX - tw * 0.5f;
-                uiDrawTextClipped(startX, 152.0f, 106.0f, cleanName.c_str(), colAmber);
+                uiDrawTextCenteredClipped(centerX, 152.0f, 114.0f, cleanName.c_str(), colAmber);
             }
         } else {
             std::string cleanName = (s_metaLoaded && !s_currentMeta.title.empty()) ? s_currentMeta.title : baseSelectedName;
             if(!cleanName.empty()) {
-                float tw = uiGetTextWidth(cleanName.c_str(), 1.0f);
-                if(tw > 106.0f) tw = 106.0f;
-                float startX = centerX - tw * 0.5f;
-                uiDrawTextClipped(startX, 138.0f, 106.0f, cleanName.c_str(), colAmber);
+                uiDrawTextCenteredClipped(centerX, 138.0f, 114.0f, cleanName.c_str(), colAmber);
             }
 
             std::string pubStr = s_metaLoaded ? (!s_currentMeta.developer.empty() ? s_currentMeta.developer : s_currentMeta.publisher) : "Nintendo";
-            float pw = uiGetTextWidth(pubStr.c_str(), 1.0f);
-            if(pw > 106.0f) pw = 106.0f;
-            float px = centerX - pw * 0.5f;
-            uiDrawTextClipped(px, 152.0f, 106.0f, pubStr.c_str(), colGray);
+            uiDrawTextCenteredClipped(centerX, 152.0f, 114.0f, pubStr.c_str(), colGray);
         }
 
-        // Selector "< Slot N >" centrado en x=253 en y=168
+        // Selector "< Slot N >" centrado en x=252 en y=166
         char slotBuf[24];
         snprintf(slotBuf, sizeof(slotBuf), "< Slot %d >", s_previewSlot);
-        uiDrawTextCentered(253.0f, 168.0f, slotBuf, colWhite);
+        uiDrawTextCenteredClipped(centerX, 166.0f, 118.0f, slotBuf, colWhite);
 
         // Estado / Acción en línea inferior (y=182)
         if(hasState) {
-            char startBuf[32];
-            snprintf(startBuf, sizeof(startBuf), "[START] Cargar Slot %d", s_previewSlot);
-            float tw = uiGetTextWidth(startBuf, 1.0f);
-            if(tw > 114.0f) {
-                uiDrawTextClipped(panelX + 2.0f, 182.0f, 114.0f, startBuf, colGreen);
-            } else {
-                uiDrawTextCentered(centerX, 182.0f, startBuf, colGreen);
-            }
+            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, "[START] Cargar", colGreen);
         } else if(s_previewSlot == 0) {
             const char* statusStr = hasSav ? "[SRAM OK]" : "[Sin Estado]";
             u32 statusCol = hasSav ? colCyan : colDarkGray;
-            uiDrawTextCentered(253.0f, 182.0f, statusStr, statusCol);
+            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, statusStr, statusCol);
         } else {
-            uiDrawTextCentered(centerX, 182.0f, "[A] Iniciar Normal", colDarkGray);
+            uiDrawTextCenteredClipped(centerX, 182.0f, 118.0f, "[A] Iniciar", colDarkGray);
         }
 
     } else if(s_brMode == BR_MODE_DISPLAY) {
