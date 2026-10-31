@@ -386,14 +386,40 @@ static std::string findBoxartPrefixMatch(const std::string& prefix) {
     return "";
 }
 
-static inline void emitUiQuad(float x1, float y1, float x2, float y2, float u1, float v1, float u2, float v2) {
-    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x2, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+static inline void uiSendColor(u32 color) {
+    float r = (float) (color & 0xFF) / 255.0f;
+    float g = (float) ((color >> 8) & 0xFF) / 255.0f;
+    float b = (float) ((color >> 16) & 0xFF) / 255.0f;
+    float a = (float) ((color >> 24) & 0xFF) / 255.0f;
+    C3D_ImmSendAttrib(r, g, b, a);
+}
 
-    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x1, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+static inline u32 uiScaleColor(u32 color, float scale) {
+    u8 r = (u8) ((float) (color & 0xFF) * scale);
+    u8 g = (u8) ((float) ((color >> 8) & 0xFF) * scale);
+    u8 b = (u8) ((float) ((color >> 16) & 0xFF) * scale);
+    u8 a = (u8) ((color >> 24) & 0xFF);
+    return uiColorRGBA(r, g, b, a);
+}
+
+static void uiUsePrimaryColorEnv() {
+    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
+    C3D_TexEnvInit(env0);
+    C3D_TexEnvSrc(env0, C3D_Both, GPU_PRIMARY_COLOR, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
+    C3D_TexEnvOpRgb(env0, GPU_TEVOP_RGB_SRC_COLOR);
+    C3D_TexEnvOpAlpha(env0, GPU_TEVOP_A_SRC_ALPHA);
+    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
+    C3D_TexEnvInit(C3D_GetTexEnv(1));
+}
+
+static inline void emitUiQuad(float x1, float y1, float x2, float y2, float u1, float v1, float u2, float v2) {
+    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x2, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+
+    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x1, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f); C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
 }
 
 void uiRenderInit() {
@@ -562,32 +588,21 @@ void uiDrawRect(float x, float y, float w, float h, u32 color) {
     C3D_ImmDrawEnd();
 }
 
-static void uiDrawEllipse2D(float centerX, float centerY, float radiusX, float radiusY, u32 color) {
+static void uiDrawSoftShadowEllipse(float centerX, float centerY, float radiusX, float radiusY) {
     if(radiusX <= 0.0f || radiusY <= 0.0f) {
         return;
-    }
-
-    if((color & 0xFF000000) == 0) {
-        if((color & 0x00FFFFFF) != 0) {
-            color |= 0xFF000000;
-        } else {
-            return;
-        }
     }
 
     C3D_DepthTest(false, GPU_ALWAYS, GPU_WRITE_ALL);
     C3D_CullFace(GPU_CULL_NONE);
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
-    C3D_AlphaTest(true, GPU_GREATER, 0);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+    uiUsePrimaryColorEnv();
 
-    C3D_TexEnv* env0 = C3D_GetTexEnv(0);
-    C3D_TexEnvInit(env0);
-    C3D_TexEnvSrc(env0, C3D_Both, GPU_CONSTANT, (GPU_TEVSRC)0, (GPU_TEVSRC)0);
-    C3D_TexEnvFunc(env0, C3D_Both, GPU_REPLACE);
-    C3D_TexEnvColor(env0, color);
-    C3D_TexEnvInit(C3D_GetTexEnv(1));
+    u32 centerColor = uiColorRGBA(10, 14, 22, 130);
+    u32 edgeColor = uiColorRGBA(10, 14, 22, 0);
+    const int segments = 8;
 
-    const int segments = 24;
     C3D_ImmDrawBegin(GPU_TRIANGLES);
     for(int i = 0; i < segments; i++) {
         float a0 = (2.0f * (float) M_PI * (float) i) / (float) segments;
@@ -596,14 +611,17 @@ static void uiDrawEllipse2D(float centerX, float centerY, float radiusX, float r
         C3D_ImmSendAttrib(centerX, centerY, 0.5f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        uiSendColor(centerColor);
 
         C3D_ImmSendAttrib(centerX + cosf(a0) * radiusX, centerY + sinf(a0) * radiusY, 0.5f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        uiSendColor(edgeColor);
 
         C3D_ImmSendAttrib(centerX + cosf(a1) * radiusX, centerY + sinf(a1) * radiusY, 0.5f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
         C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+        uiSendColor(edgeColor);
     }
     C3D_ImmDrawEnd();
 }
@@ -931,10 +949,10 @@ static inline void uiEmitGlyphQuad(float penX, float penY, uint8_t c, float scal
     C3D_TexEnvColor(env0, color);
 
     C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
-    C3D_ImmSendAttrib(x0, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x1, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x0, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(x0, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x1, y0, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v0, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x0, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u0, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f); C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
     C3D_ImmDrawEnd();
 }
 
@@ -1609,19 +1627,30 @@ static inline void emitQuad3D(Vec3 p0, Vec2 uv0,
                               Vec3 p1, Vec2 uv1,
                               Vec3 p2, Vec2 uv2,
                               Vec3 p3, Vec2 uv3) {
-    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(p1.x, p1.y, p1.z, 1.0f); C3D_ImmSendAttrib(uv1.u, uv1.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p1.x, p1.y, p1.z, 1.0f); C3D_ImmSendAttrib(uv1.u, uv1.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
 
-    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(p3.x, p3.y, p3.z, 1.0f); C3D_ImmSendAttrib(uv3.u, uv3.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
-    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p3.x, p3.y, p3.z, 1.0f); C3D_ImmSendAttrib(uv3.u, uv3.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+}
+
+static void emitTexturedQuadStrip3D(Vec3 p0, Vec2 uv0, Vec3 p1, Vec2 uv1,
+                                    Vec3 p2, Vec2 uv2, Vec3 p3, Vec2 uv3) {
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(p0.x, p0.y, p0.z, 1.0f); C3D_ImmSendAttrib(uv0.u, uv0.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p1.x, p1.y, p1.z, 1.0f); C3D_ImmSendAttrib(uv1.u, uv1.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p2.x, p2.y, p2.z, 1.0f); C3D_ImmSendAttrib(uv2.u, uv2.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmSendAttrib(p3.x, p3.y, p3.z, 1.0f); C3D_ImmSendAttrib(uv3.u, uv3.v, 0.0f, 0.0f); C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f); uiSendColor(0xFFFFFFFFu);
+    C3D_ImmDrawEnd();
 }
 
 static inline void emitSolidVertex3D(float x, float y, float z) {
     C3D_ImmSendAttrib(x, y, z, 1.0f);
     C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
     C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(0xFFFFFFFFu);
 }
 
 static void emitSolidQuad3D(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, u32 color) {
@@ -1636,6 +1665,89 @@ static void emitSolidQuad3D(Vec3 p0, Vec3 p1, Vec3 p2, Vec3 p3, u32 color) {
     C3D_ImmDrawBegin(GPU_TRIANGLES);
     emitQuad3D(p0, uv, p1, uv, p2, uv, p3, uv);
     C3D_ImmDrawEnd();
+}
+
+static void emitAOSideQuad3D(Vec3 frontTop, Vec3 frontBottom, Vec3 backBottom, Vec3 backTop, u32 baseColor) {
+    u32 backColor = uiScaleColor(baseColor, 0.5f);
+    uiUsePrimaryColorEnv();
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(frontTop.x, frontTop.y, frontTop.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(baseColor);
+
+    C3D_ImmSendAttrib(frontBottom.x, frontBottom.y, frontBottom.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(baseColor);
+
+    C3D_ImmSendAttrib(backBottom.x, backBottom.y, backBottom.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(backColor);
+
+    C3D_ImmSendAttrib(backTop.x, backTop.y, backTop.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(backColor);
+    C3D_ImmDrawEnd();
+}
+
+static void emitEdgeAASkirt3D(Vec3 inner0, Vec3 inner1, Vec3 outer0, Vec3 outer1, u32 borderColor) {
+    u32 outerColor = borderColor & 0x00FFFFFFu;
+    uiUsePrimaryColorEnv();
+    C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
+    C3D_AlphaTest(false, GPU_ALWAYS, 0);
+
+    C3D_ImmDrawBegin(GPU_TRIANGLE_STRIP);
+    C3D_ImmSendAttrib(inner0.x, inner0.y, inner0.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(borderColor);
+
+    C3D_ImmSendAttrib(inner1.x, inner1.y, inner1.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(borderColor);
+
+    C3D_ImmSendAttrib(outer0.x, outer0.y, outer0.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(outerColor);
+
+    C3D_ImmSendAttrib(outer1.x, outer1.y, outer1.z, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(0.0f, 0.0f, 0.0f, 0.0f);
+    uiSendColor(outerColor);
+    C3D_ImmDrawEnd();
+}
+
+static void emitEdgeAASkirtRect3D(float halfW, float halfH, float z, float skirt, u32 topColor, u32 bottomColor) {
+    Vec3 topInnerL = {-halfW, -halfH, z};
+    Vec3 topInnerR = { halfW, -halfH, z};
+    Vec3 topOuterL = {-halfW, -halfH - skirt, z};
+    Vec3 topOuterR = { halfW, -halfH - skirt, z};
+    emitEdgeAASkirt3D(topInnerL, topInnerR, topOuterL, topOuterR, topColor);
+
+    Vec3 leftInnerT = {-halfW, -halfH, z};
+    Vec3 leftInnerB = {-halfW,  halfH, z};
+    Vec3 leftOuterT = {-halfW - skirt, -halfH, z};
+    Vec3 leftOuterB = {-halfW - skirt,  halfH, z};
+    emitEdgeAASkirt3D(leftInnerT, leftInnerB, leftOuterT, leftOuterB, topColor);
+
+    Vec3 rightInnerT = { halfW, -halfH, z};
+    Vec3 rightInnerB = { halfW,  halfH, z};
+    Vec3 rightOuterT = { halfW + skirt, -halfH, z};
+    Vec3 rightOuterB = { halfW + skirt,  halfH, z};
+    emitEdgeAASkirt3D(rightInnerT, rightInnerB, rightOuterT, rightOuterB, bottomColor);
+
+    Vec3 bottomInnerL = {-halfW, halfH, z};
+    Vec3 bottomInnerR = { halfW, halfH, z};
+    Vec3 bottomOuterL = {-halfW, halfH + skirt, z};
+    Vec3 bottomOuterR = { halfW, halfH + skirt, z};
+    emitEdgeAASkirt3D(bottomInnerL, bottomInnerR, bottomOuterL, bottomOuterR, bottomColor);
 }
 
 static void emitSolidRect3D(float x0, float y0, float x1, float y1, float z, u32 color) {
@@ -1684,7 +1796,47 @@ static void emitSolidEllipse3D(float cx, float cy, float rx, float ry, float z, 
     C3D_ImmDrawEnd();
 }
 
-static void uiEmitText3D(float centerX, float centerY, float scale, const char* text, u32 color, float z) {
+static float uiMeasureText3D(const char* text, float scale) {
+    if(!text || text[0] == '\0' || scale <= 0.0f) {
+        return 0.0f;
+    }
+
+    float width = 0.0f;
+    const char* p = text;
+    while(*p != '\0') {
+        uint8_t c = (uint8_t) *p;
+        if(c == ' ') {
+            width += s_glyphAdvance[' '] * scale;
+            p++;
+            continue;
+        }
+        if(c < 32 || c == 127) {
+            p++;
+            continue;
+        }
+
+        if((c & 0x80) != 0) {
+            c = getNextGlyph(p);
+            if(c == 0) {
+                continue;
+            }
+            if(c == ' ') {
+                width += s_glyphAdvance[' '] * scale;
+                continue;
+            }
+        } else {
+            p++;
+        }
+
+        if(s_glyphWidth[c] > 0.0f) {
+            width += s_glyphAdvance[c] * scale;
+        }
+    }
+    return width;
+}
+
+static void uiEmitText3DRotated(float centerX, float centerY, float scale, const char* text,
+                                u32 color, float z, float angle) {
     if(!text || text[0] == '\0' || !s_fontAtlasInit || scale <= 0.0f) {
         return;
     }
@@ -1702,16 +1854,18 @@ static void uiEmitText3D(float centerX, float centerY, float scale, const char* 
     C3D_AlphaBlend(GPU_BLEND_ADD, GPU_BLEND_ADD, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA);
     C3D_AlphaTest(true, GPU_GREATER, 0);
 
-    float textWidth = uiGetTextWidth(text, scale);
-    float penX = centerX - (textWidth * 0.5f);
-    float penY = centerY - (14.0f * scale * 0.5f);
+    float textWidth = uiMeasureText3D(text, scale);
+    float penX = -(textWidth * 0.5f);
+    float penY = -(14.0f * scale * 0.5f);
+    float ca = cosf(angle);
+    float sa = sinf(angle);
 
     C3D_ImmDrawBegin(GPU_TRIANGLES);
     const char* p = text;
     while(*p != '\0') {
         uint8_t c = (uint8_t) *p;
         if(c == ' ') {
-            penX += floorf(s_glyphAdvance[' '] * scale + 0.5f);
+            penX += s_glyphAdvance[' '] * scale;
             p++;
             continue;
         }
@@ -1726,7 +1880,7 @@ static void uiEmitText3D(float centerX, float centerY, float scale, const char* 
                 continue;
             }
             if(c == ' ') {
-                penX += floorf(s_glyphAdvance[' '] * scale + 0.5f);
+                penX += s_glyphAdvance[' '] * scale;
                 continue;
             }
         } else {
@@ -1752,20 +1906,24 @@ static void uiEmitText3D(float centerX, float centerY, float scale, const char* 
         float y0 = penY;
         float y1 = penY + (float) gh * scale;
 
-        Vec3 p0 = {x0, y0, z};
-        Vec3 p1 = {x1, y0, z};
-        Vec3 p2 = {x1, y1, z};
-        Vec3 p3 = {x0, y1, z};
+        Vec3 p0 = {centerX + x0 * ca - y0 * sa, centerY + x0 * sa + y0 * ca, z};
+        Vec3 p1 = {centerX + x1 * ca - y0 * sa, centerY + x1 * sa + y0 * ca, z};
+        Vec3 p2 = {centerX + x1 * ca - y1 * sa, centerY + x1 * sa + y1 * ca, z};
+        Vec3 p3 = {centerX + x0 * ca - y1 * sa, centerY + x0 * sa + y1 * ca, z};
         Vec2 uv0 = {u0, v0};
         Vec2 uv1 = {u1, v0};
         Vec2 uv2 = {u1, v1};
         Vec2 uv3 = {u0, v1};
         emitQuad3D(p0, uv0, p1, uv1, p2, uv2, p3, uv3);
-        penX += floorf(s_glyphAdvance[c] * scale + 0.5f);
+        penX += s_glyphAdvance[c] * scale;
     }
     C3D_ImmDrawEnd();
 
     C3D_AlphaTest(false, GPU_ALWAYS, 0);
+}
+
+static void uiEmitText3D(float centerX, float centerY, float scale, const char* text, u32 color, float z) {
+    uiEmitText3DRotated(centerX, centerY, scale, text, color, z, 0.0f);
 }
 
 static float s_cartridgeAnimTimer = 0.0f;
@@ -1987,8 +2145,8 @@ void uiDrawBoxart3D(float centerX, float centerY, float size, const C3D_Mtx* pro
 
 static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
                                  const std::string& romName, bool isGBC, bool isCgbOnly) {
-    const float floatY = sinf(s_cartridgeAnimTimer * 1.8f) * 3.5f;
-    const float floatRotZ = sinf(s_cartridgeAnimTimer * 1.2f) * 1.2f;
+    const float floatY = fmaxf(-3.5f, fminf(3.5f, sinf(s_cartridgeAnimTimer * 1.8f) * 3.5f));
+    const float floatRotZ = fmaxf(-1.2f, fminf(1.2f, sinf(s_cartridgeAnimTimer * 1.2f) * 1.2f));
     const float bodyW = 138.0f;
     const float bodyH = 160.0f;
     const float halfW = bodyW * 0.5f;
@@ -1998,12 +2156,8 @@ static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
     CartridgePalette palette = getAuthenticCartridgeColors(romName, isGBC, isCgbOnly);
 
     float shadowSquash = 1.0f - (floatY / 3.5f) * 0.08f;
-    float shadowAlpha = 110.0f - (floatY / 3.5f) * 12.0f;
-    if(shadowAlpha < 0.0f) shadowAlpha = 0.0f;
-    if(shadowAlpha > 255.0f) shadowAlpha = 255.0f;
-    uiDrawEllipse2D(centerX + eyeOffset * 2.0f, 198.0f - floatY * 0.35f,
-                    68.0f * shadowSquash, 10.0f * shadowSquash,
-                    uiColorRGBA(8, 10, 16, (u8) shadowAlpha));
+    uiDrawSoftShadowEllipse(centerX + eyeOffset * 2.0f, 198.0f - floatY * 0.35f,
+                            68.0f * shadowSquash, 10.0f * shadowSquash);
 
     C3D_Mtx modelView;
     Mtx_Identity(&modelView);
@@ -2033,15 +2187,17 @@ static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
     Vec3 BBR = { halfW,  halfH, -depth};
     Vec3 BBL = {-halfW,  halfH, -depth};
 
-    // Volumen extruido: dorso, canto izquierdo, canto superior y cantos oscuros
+    // Volumen extruido: dorso, cantos con oclusión ambiental y canto superior
     emitSolidQuad3D(BTL, BTR, BBR, BBL, palette.shadowColor);
-    emitSolidQuad3D(FTL, BTL, BBL, FBL, palette.shadowColor);
+    emitAOSideQuad3D(FTL, FBL, BBL, BTL, palette.shadowColor);
     emitSolidQuad3D(FTL, FTR, BTR, BTL, palette.highlightColor);
-    emitSolidQuad3D(FTR, BTR, BBR, FBR, palette.shadowColor);
+    emitAOSideQuad3D(FTR, FBR, BBR, BTR, palette.shadowColor);
     emitSolidQuad3D(FBL, FBR, BBR, BBL, palette.shadowColor);
 
     // Cara frontal y biseles exteriores
     emitSolidQuad3D(FTL, FTR, FBR, FBL, palette.bodyColor);
+    emitEdgeAASkirtRect3D(halfW, halfH, 0.05f, 1.2f, palette.highlightColor, palette.shadowColor);
+    emitEdgeAASkirtRect3D(halfW, halfH, -depth + 0.05f, 1.2f, palette.shadowColor, palette.shadowColor);
     emitSolidRect3D(-halfW, -halfH, halfW, -halfH + 2.0f, 0.1f, palette.highlightColor);
     emitSolidRect3D(-halfW, -halfH, -halfW + 2.0f, halfH, 0.1f, palette.highlightColor);
     emitSolidRect3D(-halfW, halfH - 2.0f, halfW, halfH, 0.1f, palette.shadowColor);
@@ -2049,44 +2205,61 @@ static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
 
     const float topCenterY = -halfH + 13.0f;
     if(isGBC && isCgbOnly) {
-        // Cabezal convexo del Game Boy Color
+        // Cabezal convexo del Game Boy Color con borde suave
+        u32 humpFringe = (palette.bodyColor & 0x00FFFFFFu) | ((u32) 110 << 24);
+        emitSolidEllipse3D(0.0f, -halfH + 2.0f, 61.2f, 8.2f, 0.18f, humpFringe, 24);
         emitSolidEllipse3D(0.0f, -halfH + 2.0f, 60.0f, 7.0f, 0.2f, palette.bodyColor, 24);
         emitSolidEllipse3D(0.0f, -halfH, 46.0f, 3.0f, 0.25f, palette.highlightColor, 20);
-        emitSolidEllipse3D(0.0f, topCenterY, 38.0f, 7.0f, 0.3f, palette.shadowColor, 20);
-        emitSolidEllipse3D(0.0f, topCenterY, 34.0f, 5.0f, 0.35f, palette.highlightColor, 20);
-        uiEmitText3D(0.0f, topCenterY, 0.45f, "GAME BOY COLOR", palette.shadowColor, 0.4f);
     } else {
-        // Estrías de agarre, muesca y óvalo del Game Boy / Dual-Mode
+        // Estrías de agarre biseladas en la zona superior derecha
         for(int i = 0; i < 5; i++) {
-            float gy = -halfH + 6.0f + (float) i * 3.0f;
-            emitSolidRect3D(-halfW + 7.0f, gy, -halfW + 21.0f, gy + 1.0f, 0.2f, palette.shadowColor);
-            emitSolidRect3D(-halfW + 7.0f, gy + 1.0f, -halfW + 21.0f, gy + 2.0f, 0.2f, palette.highlightColor);
+            float gy = -halfH + 13.0f + (float) i * 2.5f;
+            emitSolidRect3D(halfW - 26.0f, gy, halfW - 8.0f, gy + 1.0f, 0.2f, palette.shadowColor);
+            emitSolidRect3D(halfW - 26.0f, gy + 1.0f, halfW - 8.0f, gy + 2.0f, 0.2f, palette.highlightColor);
         }
 
+        // Muesca escalonada limpia en la esquina superior derecha
         emitSolidRect3D(halfW - 24.0f, -halfH, halfW, -halfH + 8.0f, 0.2f, uiColorRGBA(10, 14, 20, 255));
         emitSolidRect3D(halfW - 18.0f, -halfH + 8.0f, halfW, -halfH + 12.0f, 0.2f, uiColorRGBA(10, 14, 20, 255));
-
-        emitSolidEllipse3D(0.0f, topCenterY, 38.0f, 7.0f, 0.3f, palette.shadowColor, 20);
-        emitSolidEllipse3D(0.0f, topCenterY, 34.0f, 5.0f, 0.35f, palette.highlightColor, 20);
-        uiEmitText3D(0.0f, topCenterY, 0.45f, "Nintendo GAME BOY", palette.shadowColor, 0.4f);
     }
 
-    const float labelX = -56.0f;
-    const float labelY = -50.0f;
-    const float labelW = 112.0f;
-    const float labelH = 102.0f;
-    const float bandW = 14.0f;
-    const float mainX = labelX + bandW;
-    const float mainW = labelW - bandW;
+    // Óvalo hundido con bisel superior y logotipo Nintendo
+    emitSolidEllipse3D(0.0f, topCenterY, 38.0f, 7.0f, 0.3f, palette.highlightColor, 20);
+    emitSolidEllipse3D(0.0f, topCenterY + 0.5f, 35.0f, 5.5f, 0.32f, palette.shadowColor, 20);
+    emitSolidEllipse3D(0.0f, topCenterY - 2.5f, 30.0f, 1.3f, 0.34f, palette.highlightColor, 16);
+    uiEmitText3D(0.0f, topCenterY + 0.5f, 0.6f, "Nintendo", palette.highlightColor, 0.36f);
 
-    // Ventana de etiqueta hundida con franja lateral
-    emitSolidRect3D(labelX - 2.0f, labelY - 2.0f, labelX + labelW + 2.0f, labelY + labelH + 2.0f, 0.3f, uiColorRGBA(15, 18, 24, 255));
-    emitSolidRect3D(labelX, labelY, labelX + labelW, labelY + labelH, 0.4f, uiColorRGBA(232, 232, 236, 255));
-    emitSolidRect3D(labelX, labelY, labelX + bandW, labelY + labelH, 0.45f, palette.highlightColor);
-    emitSolidRect3D(labelX + bandW - 1.0f, labelY, labelX + bandW, labelY + labelH, 0.46f, palette.shadowColor);
-    uiEmitText3D(labelX + bandW * 0.5f, labelY + 25.0f, 0.22f, isGBC ? "CGB" : "GB", palette.shadowColor, 0.5f);
+    const float labelX = -57.0f;
+    const float labelY = -52.0f;
+    const float labelW = 114.0f;
+    const float labelH = 104.0f;
+    const float bandW = 18.0f;
+    const float artSize = 96.0f;
+    const float artX = labelX + bandW;
+    const float artY = labelY + (labelH - artSize) * 0.5f;
+
+    // Marco hundido de 1 px y base oscura de la pegatina
+    emitSolidRect3D(labelX - 1.0f, labelY - 1.0f, labelX + labelW + 1.0f, labelY + labelH + 1.0f, 0.3f, uiColorRGBA(0, 0, 0, 160));
+    emitSolidRect3D(labelX, labelY, labelX + labelW, labelY + labelH, 0.4f, uiColorRGBA(20, 22, 28, 255));
+
+    // Franja lateral izquierda plateada
+    emitSolidRect3D(labelX, labelY, labelX + bandW, labelY + labelH, 0.45f, uiColorRGBA(235, 235, 240, 255));
+    emitSolidRect3D(labelX + bandW - 1.0f, labelY, labelX + bandW, labelY + labelH, 0.46f, uiColorRGBA(70, 72, 80, 255));
+
+    const char* bandText = isGBC ? "GAME BOY COLOR" : "GAME BOY";
+    float bandScale = isGBC ? 0.55f : 0.85f;
+    uiEmitText3DRotated(labelX + bandW * 0.5f, labelY + 34.0f, bandScale, bandText,
+                        uiColorRGBA(40, 42, 48, 255), 0.5f, -(float) M_PI * 0.5f);
+
+    // Logotipo circular Nintendo en la base de la franja
+    float logoX = labelX + bandW * 0.5f;
+    float logoY = labelY + labelH - 16.0f;
+    emitSolidEllipse3D(logoX, logoY, 7.0f, 7.0f, 0.5f, uiColorRGBA(200, 30, 40, 255), 20);
+    uiEmitText3D(logoX, logoY, 0.42f, "N", uiColorRGBA(255, 255, 255, 255), 0.55f);
 
     if(s_boxartLoaded && s_boxartTexAllocated) {
+        C3D_TexSetFilter(&s_boxartTex, GPU_LINEAR, GPU_LINEAR);
+        C3D_TexSetWrap(&s_boxartTex, GPU_CLAMP_TO_EDGE, GPU_CLAMP_TO_EDGE);
         C3D_TexBind(0, &s_boxartTex);
         C3D_TexEnv* env0 = C3D_GetTexEnv(0);
         C3D_TexEnvInit(env0);
@@ -2095,34 +2268,32 @@ static void uiDrawCartridgeLarge(float centerX, float centerY, float eyeOffset,
         C3D_TexEnvInit(C3D_GetTexEnv(1));
         C3D_AlphaTest(false, GPU_ALWAYS, 0);
 
-        Vec3 l0 = {mainX, labelY, 0.6f};
-        Vec3 l1 = {mainX + mainW, labelY, 0.6f};
-        Vec3 l2 = {mainX + mainW, labelY + labelH, 0.6f};
-        Vec3 l3 = {mainX, labelY + labelH, 0.6f};
+        Vec3 l0 = {artX, artY, 0.6f};
+        Vec3 l1 = {artX + artSize, artY, 0.6f};
+        Vec3 l2 = {artX + artSize, artY + artSize, 0.6f};
+        Vec3 l3 = {artX, artY + artSize, 0.6f};
         Vec2 uv0 = {0.0f, 0.0f};
         Vec2 uv1 = {1.0f, 0.0f};
         Vec2 uv2 = {1.0f, 1.0f};
         Vec2 uv3 = {0.0f, 1.0f};
-        C3D_ImmDrawBegin(GPU_TRIANGLES);
-        emitQuad3D(l0, uv0, l1, uv1, l2, uv2, l3, uv3);
-        C3D_ImmDrawEnd();
+        emitTexturedQuadStrip3D(l0, uv0, l1, uv1, l3, uv3, l2, uv2);
     } else {
-        emitSolidRect3D(mainX, labelY, mainX + mainW, labelY + labelH, 0.6f, uiColorRGBA(30, 34, 42, 255));
+        emitSolidRect3D(artX, artY, artX + artSize, artY + artSize, 0.6f, uiColorRGBA(30, 34, 42, 255));
         std::string label = romName.empty() ? "GAME BOY" : romName;
         float labelScale = 0.42f;
-        float labelWidth = uiGetTextWidth(label.c_str(), labelScale);
-        if(labelWidth > mainW - 8.0f && labelWidth > 0.0f) {
-            labelScale *= (mainW - 8.0f) / labelWidth;
+        float labelWidth = uiMeasureText3D(label.c_str(), labelScale);
+        if(labelWidth > artSize - 8.0f && labelWidth > 0.0f) {
+            labelScale *= (artSize - 8.0f) / labelWidth;
         }
-        uiEmitText3D(mainX + mainW * 0.5f, labelY + labelH * 0.5f, labelScale, label.c_str(), palette.highlightColor, 0.65f);
+        uiEmitText3D(artX + artSize * 0.5f, artY + artSize * 0.5f, labelScale, label.c_str(), palette.highlightColor, 0.65f);
     }
 
-    // Reflejo diagonal laminado
-    Vec3 g0 = {mainX + mainW * 0.54f, labelY, 0.7f};
-    Vec3 g1 = {mainX + mainW * 0.70f, labelY, 0.7f};
-    Vec3 g2 = {mainX + mainW * 0.84f, labelY + labelH, 0.7f};
-    Vec3 g3 = {mainX + mainW * 0.68f, labelY + labelH, 0.7f};
-    emitSolidQuad3D(g0, g1, g2, g3, uiColorRGBA(255, 255, 255, 32));
+    // Reflejo diagonal laminado sobre toda la pegatina
+    Vec3 g0 = {labelX + labelW * 0.10f, labelY, 0.7f};
+    Vec3 g1 = {labelX + labelW * 0.34f, labelY, 0.7f};
+    Vec3 g2 = {labelX + labelW * 0.52f, labelY + labelH, 0.7f};
+    Vec3 g3 = {labelX + labelW * 0.28f, labelY + labelH, 0.7f};
+    emitSolidQuad3D(g0, g1, g2, g3, uiColorRGBA(255, 255, 255, 37));
 
     // Muescas inferiores y triángulo indicador
     emitSolidRect3D(-halfW + 2.0f, halfH - 10.0f, -halfW + 8.0f, halfH, 0.25f, palette.shadowColor);

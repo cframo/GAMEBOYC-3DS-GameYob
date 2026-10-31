@@ -76,26 +76,32 @@ static inline void drawQuad(float x1, float y1, float x2, float y2, float u1, fl
     C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu1, gv1, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu2, gv2, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmSendAttrib(x2, y1, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u2, v1, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu2, gv1, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmSendAttrib(x1, y1, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u1, v1, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu1, gv1, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmSendAttrib(x1, y2, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u1, v2, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu1, gv2, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmSendAttrib(x2, y2, 0.5f, 0.0f);
     C3D_ImmSendAttrib(u2, v2, 0.0f, 0.0f);
     C3D_ImmSendAttrib(gu2, gv2, 0.0f, 0.0f);
+    C3D_ImmSendAttrib(1.0f, 1.0f, 1.0f, 1.0f);
 
     C3D_ImmDrawEnd();
 }
@@ -172,6 +178,7 @@ bool gfxInit() {
     AttrInfo_AddLoader(attrInfo, 0, GPU_FLOAT, 3);
     AttrInfo_AddLoader(attrInfo, 1, GPU_FLOAT, 2);
     AttrInfo_AddLoader(attrInfo, 2, GPU_FLOAT, 2);
+    AttrInfo_AddLoader(attrInfo, 3, GPU_FLOAT, 4);
 
     C3D_TexEnv* env = C3D_GetTexEnv(0);
     if(env == NULL) {

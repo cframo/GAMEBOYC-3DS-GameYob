@@ -12,11 +12,13 @@
 .out outtc0 texcoord0
 .out outtc1 texcoord1
 .out outtc2 texcoord2
+.out outclr color
 
 ; Inputs (defined as aliases for convenience)
 .alias inpos  v0
 .alias intex  v1
 .alias ingrid v2
+.alias incolr v3
 
 .bool test
 
@@ -38,6 +40,7 @@
 	mov r1.z,  zeros
 	mov r1.w,  ones
 	mov outtc1, r1
+	mov outclr, incolr
 
 	end
 .end
